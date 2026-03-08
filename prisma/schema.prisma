@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PipelineStatus {
+  watching
+  drafting
+  submitted
+  won
+  lost
+  passed
+}
+
+enum TenderLifecycleStatus {
+  active
+  archived
+}
+
+enum TenderScopeKind {
+  lot
+}
+
+model Tender {
+  id              String               @id @default(uuid()) @db.Uuid
+  source          String
+  sourceNoticeId  String               @unique
+  sourceUrl       String
+  title           String
+  description     String
+  buyerName       String
+  country         String
+  region          String?
+  currency        String               @default("EUR")
+  estimatedValue  Decimal?             @db.Decimal(18, 2)
+  publishedAt     DateTime
+  deadlineAt      DateTime?
+  status          String               @default("published")
+  procedureType   String?
+  lifecycleStatus TenderLifecycleStatus @default(active)
+  archivedAt      DateTime?
+  archiveReason   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  cpvCodes        TenderCpvCode[]
+  lots            TenderLot[]
+  pipelineEntry   PipelineEntry?
+  aiScores        AiScore[]
+
+  @@index([publishedAt(sort: Desc)])
+  @@index([country])
+  @@index([status])
+  @@index([lifecycleStatus])
+}
+
+model TenderCpvCode {
+  tenderId String @db.Uuid
+  cpvCode  String
+  tender   Tender @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@id([tenderId, cpvCode])
+}
+
+model TenderLot {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenderId    String          @db.Uuid
+  scopeId     String
+  kind        TenderScopeKind
+  title       String
+  description String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  tender      Tender          @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@unique([tenderId, scopeId])
+  @@index([tenderId])
+}
+
+model SavedSearch {
+  id                String    @id @default(uuid()) @db.Uuid
+  userEmail         String
+  name              String
+  enabled           Boolean   @default(true)
+  countries         String[]
+  keywordsInclude   String[]
+  keywordsExclude   String[]
+  cpvInclude        String[]
+  minValue          Decimal   @default(0) @db.Decimal(18, 2)
+  maxDaysToDeadline Int       @default(45)
+  minScore          Int       @default(45)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  aiScores          AiScore[]
+
+  @@index([userEmail])
+  @@index([enabled])
+}
+
+model PipelineEntry {
+  tenderId   String         @id @db.Uuid
+  status     PipelineStatus
+  updatedAt  DateTime
+  notes      String?
+  tender     Tender         @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model AiScore {
+  key       String     @id
+  searchId  String     @db.Uuid
+  tenderId  String     @db.Uuid
+  scopeId   String?
+  score     Int
+  reasoning String
+  cachedAt  DateTime
+  search    SavedSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  tender    Tender      @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@index([searchId])
+  @@index([tenderId])
+}
