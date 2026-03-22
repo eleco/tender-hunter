@@ -72,6 +72,47 @@ If you want a disposable local Postgres instead of Neon while developing migrati
 docker compose up -d
 ```
 
+## Run the scanner from GitHub every day at 06:00 Europe/Madrid
+This repo includes a scheduled GitHub Actions workflow at `.github/workflows/daily-import.yml`.
+
+Important:
+- GitHub-hosted runners are ephemeral, so do not use `STORAGE_BACKEND=file` for scheduled imports.
+- Use a persistent Postgres database and set `DATABASE_URL` in GitHub Actions secrets.
+- GitHub Actions cron uses UTC, not local time. The workflow triggers at both `04:00` and `05:00` UTC and only continues when the current Madrid time is `06:00`, so it stays aligned across CET/CEST changes.
+
+Required GitHub secret:
+- `DATABASE_URL`
+
+Optional GitHub secrets:
+- `ANTHROPIC_API_KEY`
+- `MAILGUN_API_KEY`
+
+Recommended GitHub variables:
+- `APP_URL`
+- `TED_API_BASE_URL`
+- `TED_QUERY`
+- `TED_PAGE_SIZE`
+- `DIGEST_FROM`
+- `MAILGUN_DOMAIN`
+- `MAILGUN_FROM`
+- `MAILGUN_API_BASE_URL`
+
+One-time setup before enabling the schedule:
+1. Push this repository to GitHub.
+2. Create the Actions secrets under `Settings > Secrets and variables > Actions`.
+3. Apply the Prisma schema to your production database once:
+   ```bash
+   npm run db:push
+   ```
+4. Commit and push the workflow file.
+5. If you want the workflow to email the digest, set:
+   - `MAILGUN_DOMAIN` to your verified Mailgun sending domain
+   - `MAILGUN_FROM` to a verified sender such as `Tender Hunter <alerts@your-domain>`
+   - `MAILGUN_API_KEY` as an Actions secret
+   - `MAILGUN_API_BASE_URL=https://api.eu.mailgun.net` if your Mailgun account is in the EU region
+   - the workflow sends the digest to `eric.leconte@gmail.com` by default
+6. In GitHub, open `Actions > Daily Scanner` and use `Run workflow` once to verify it succeeds and sends the email.
+
 ## Storage backends
 - `STORAGE_BACKEND=file`: JSON files in `data/` (default MVP mode)
 - `STORAGE_BACKEND=database`: PostgreSQL via Prisma, with Neon as the recommended hosted provider on Vercel

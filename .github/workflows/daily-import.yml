@@ -1,0 +1,63 @@
+name: Daily Scanner
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub Actions cron is UTC. We trigger at both 04:00 and 05:00 UTC,
+    # then keep only the run that is 06:00 in Europe/Madrid.
+    - cron: "0 4 * * *"
+    - cron: "0 5 * * *"
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STORAGE_BACKEND: database
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      APP_URL: ${{ vars.APP_URL }}
+      TED_API_BASE_URL: ${{ vars.TED_API_BASE_URL }}
+      TED_QUERY: ${{ vars.TED_QUERY }}
+      TED_PAGE_SIZE: ${{ vars.TED_PAGE_SIZE }}
+      DIGEST_FROM: ${{ vars.DIGEST_FROM }}
+      DIGEST_TO: eric.leconte@gmail.com
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+      MAILGUN_DOMAIN: ${{ vars.MAILGUN_DOMAIN }}
+      MAILGUN_FROM: ${{ vars.MAILGUN_FROM }}
+      MAILGUN_API_BASE_URL: ${{ vars.MAILGUN_API_BASE_URL }}
+
+    steps:
+      - name: Check Madrid runtime window
+        id: schedule_gate
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(TZ=Europe/Madrid date +%H)" != "06" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Not 06:00 in Europe/Madrid. Skipping."
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out repository
+        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
+        run: npm ci
+
+      - name: Run scanner
+        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
+        run: npm run import
+
+      - name: Send digest email
+        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
+        run: npm run send:digest
