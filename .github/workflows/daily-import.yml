@@ -11,21 +11,10 @@ on:
 jobs:
   import:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
-      STORAGE_BACKEND: database
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      APP_URL: ${{ vars.APP_URL }}
-      TED_API_BASE_URL: ${{ vars.TED_API_BASE_URL }}
-      TED_QUERY: ${{ vars.TED_QUERY }}
-      TED_PAGE_SIZE: ${{ vars.TED_PAGE_SIZE }}
-      DIGEST_FROM: ${{ vars.DIGEST_FROM }}
-      DIGEST_TO: eric.leconte@gmail.com
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
-      MAILGUN_DOMAIN: ${{ vars.MAILGUN_DOMAIN }}
-      MAILGUN_FROM: ${{ vars.MAILGUN_FROM }}
-      MAILGUN_API_BASE_URL: ${{ vars.MAILGUN_API_BASE_URL }}
+      CRON_ENDPOINT_URL: ${{ vars.CRON_ENDPOINT_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
     steps:
       - name: Check Madrid runtime window
@@ -39,25 +28,16 @@ jobs:
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check out repository
+      - name: Validate endpoint configuration
         if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
-        uses: actions/checkout@v4
+        run: |
+          test -n "$CRON_ENDPOINT_URL"
+          test -n "$CRON_SECRET"
 
-      - name: Set up Node.js
+      - name: Trigger production cron endpoint
         if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
-        run: npm ci
-
-      - name: Run scanner
-        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
-        run: npm run import
-
-      - name: Send digest email
-        if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
-        run: npm run send:digest
+        run: |
+          curl --fail-with-body --show-error --silent \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CRON_ENDPOINT_URL"
