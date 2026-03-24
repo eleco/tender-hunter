@@ -37,7 +37,26 @@ jobs:
       - name: Trigger production cron endpoint
         if: github.event_name != 'schedule' || steps.schedule_gate.outputs.should_run == 'true'
         run: |
-          curl --fail-with-body --show-error --silent \
-            -X POST \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "$CRON_ENDPOINT_URL"
+          echo "Calling endpoint: $CRON_ENDPOINT_URL"
+          response_body="$(mktemp)"
+          response_headers="$(mktemp)"
+          http_status="$(
+            curl --show-error --silent \
+              -o "$response_body" \
+              -D "$response_headers" \
+              -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$CRON_ENDPOINT_URL"
+          )"
+
+          echo "HTTP status: $http_status"
+          echo "Response headers:"
+          cat "$response_headers"
+          echo "Response body:"
+          cat "$response_body"
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "Cron endpoint call failed."
+            exit 1
+          fi
