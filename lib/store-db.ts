@@ -5,11 +5,6 @@ import { extractTenderScopes } from "@/lib/lots";
 import { AiScoreCache } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
 
-const LONG_TRANSACTION_OPTIONS = {
-  maxWait: 10_000,
-  timeout: 60_000,
-} satisfies Parameters<ReturnType<typeof getPrismaClient>["$transaction"]>[1];
-
 function toPrismaLifecycleStatus(status: TenderLifecycleStatus): PrismaTenderLifecycleStatus {
   return status === "archived" ? PrismaTenderLifecycleStatus.archived : PrismaTenderLifecycleStatus.active;
 }
@@ -131,46 +126,44 @@ export async function writeTenders(tenders: Tender[]) {
   const prisma = getPrismaClient();
   const keepNoticeIds = tenders.map((tender) => tender.sourceNoticeId);
 
-  await prisma.$transaction(async (tx) => {
-    if (keepNoticeIds.length > 0) {
-      await tx.tender.deleteMany({
-        where: {
-          sourceNoticeId: {
-            notIn: keepNoticeIds,
-          },
+  if (keepNoticeIds.length > 0) {
+    await prisma.tender.deleteMany({
+      where: {
+        sourceNoticeId: {
+          notIn: keepNoticeIds,
         },
-      });
-    } else {
-      await tx.tender.deleteMany();
-    }
+      },
+    });
+  } else {
+    await prisma.tender.deleteMany();
+  }
 
-    for (const tender of tenders) {
-      const input = getTenderWriteInput(tender);
-      await tx.tender.upsert({
-        where: { sourceNoticeId: tender.sourceNoticeId },
-        create: {
-          ...input,
-          cpvCodes: {
-            create: input.cpvCodes,
-          },
-          lots: {
-            create: input.lots,
-          },
+  for (const tender of tenders) {
+    const input = getTenderWriteInput(tender);
+    await prisma.tender.upsert({
+      where: { sourceNoticeId: tender.sourceNoticeId },
+      create: {
+        ...input,
+        cpvCodes: {
+          create: input.cpvCodes,
         },
-        update: {
-          ...input,
-          cpvCodes: {
-            deleteMany: {},
-            create: input.cpvCodes,
-          },
-          lots: {
-            deleteMany: {},
-            create: input.lots,
-          },
+        lots: {
+          create: input.lots,
         },
-      });
-    }
-  }, LONG_TRANSACTION_OPTIONS);
+      },
+      update: {
+        ...input,
+        cpvCodes: {
+          deleteMany: {},
+          create: input.cpvCodes,
+        },
+        lots: {
+          deleteMany: {},
+          create: input.lots,
+        },
+      },
+    });
+  }
 }
 
 export async function readSearches(): Promise<SavedSearch[]> {
@@ -188,33 +181,31 @@ export async function writeSearches(searches: SavedSearch[]) {
   const prisma = getPrismaClient();
   const keepIds = searches.map((search) => search.id);
 
-  await prisma.$transaction(async (tx) => {
-    if (keepIds.length > 0) {
-      await tx.savedSearch.deleteMany({
-        where: {
-          id: {
-            notIn: keepIds,
-          },
+  if (keepIds.length > 0) {
+    await prisma.savedSearch.deleteMany({
+      where: {
+        id: {
+          notIn: keepIds,
         },
-      });
-    } else {
-      await tx.savedSearch.deleteMany();
-    }
+      },
+    });
+  } else {
+    await prisma.savedSearch.deleteMany();
+  }
 
-    for (const search of searches) {
-      await tx.savedSearch.upsert({
-        where: { id: search.id },
-        create: {
-          ...search,
-          minValue: new Prisma.Decimal(search.minValue),
-        },
-        update: {
-          ...search,
-          minValue: new Prisma.Decimal(search.minValue),
-        },
-      });
-    }
-  }, LONG_TRANSACTION_OPTIONS);
+  for (const search of searches) {
+    await prisma.savedSearch.upsert({
+      where: { id: search.id },
+      create: {
+        ...search,
+        minValue: new Prisma.Decimal(search.minValue),
+      },
+      update: {
+        ...search,
+        minValue: new Prisma.Decimal(search.minValue),
+      },
+    });
+  }
 }
 
 export async function upsertSearch(input: Omit<SavedSearch, "id">): Promise<SavedSearch> {
@@ -406,32 +397,30 @@ export async function getPipelineCounts(): Promise<Record<PipelineStatus, number
 export async function upsertTenders(incoming: Tender[]) {
   const prisma = getPrismaClient();
 
-  await prisma.$transaction(async (tx) => {
-    for (const tender of incoming) {
-      const input = getTenderWriteInput(tender);
-      await tx.tender.upsert({
-        where: { sourceNoticeId: tender.sourceNoticeId },
-        create: {
-          ...input,
-          cpvCodes: {
-            create: input.cpvCodes,
-          },
-          lots: {
-            create: input.lots,
-          },
+  for (const tender of incoming) {
+    const input = getTenderWriteInput(tender);
+    await prisma.tender.upsert({
+      where: { sourceNoticeId: tender.sourceNoticeId },
+      create: {
+        ...input,
+        cpvCodes: {
+          create: input.cpvCodes,
         },
-        update: {
-          ...input,
-          cpvCodes: {
-            deleteMany: {},
-            create: input.cpvCodes,
-          },
-          lots: {
-            deleteMany: {},
-            create: input.lots,
-          },
+        lots: {
+          create: input.lots,
         },
-      });
-    }
-  }, LONG_TRANSACTION_OPTIONS);
+      },
+      update: {
+        ...input,
+        cpvCodes: {
+          deleteMany: {},
+          create: input.cpvCodes,
+        },
+        lots: {
+          deleteMany: {},
+          create: input.lots,
+        },
+      },
+    });
+  }
 }
