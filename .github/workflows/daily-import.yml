@@ -41,7 +41,7 @@ jobs:
           response_body="$(mktemp)"
           response_headers="$(mktemp)"
           http_status="$(
-            curl --show-error --silent \
+            curl --show-error --silent --location \
               -o "$response_body" \
               -D "$response_headers" \
               -w "%{http_code}" \

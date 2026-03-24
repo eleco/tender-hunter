@@ -5,6 +5,11 @@ import { extractTenderScopes } from "@/lib/lots";
 import { AiScoreCache } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
 
+const LONG_TRANSACTION_OPTIONS = {
+  maxWait: 10_000,
+  timeout: 60_000,
+} satisfies Parameters<ReturnType<typeof getPrismaClient>["$transaction"]>[1];
+
 function toPrismaLifecycleStatus(status: TenderLifecycleStatus): PrismaTenderLifecycleStatus {
   return status === "archived" ? PrismaTenderLifecycleStatus.archived : PrismaTenderLifecycleStatus.active;
 }
@@ -165,7 +170,7 @@ export async function writeTenders(tenders: Tender[]) {
         },
       });
     }
-  });
+  }, LONG_TRANSACTION_OPTIONS);
 }
 
 export async function readSearches(): Promise<SavedSearch[]> {
@@ -209,7 +214,7 @@ export async function writeSearches(searches: SavedSearch[]) {
         },
       });
     }
-  });
+  }, LONG_TRANSACTION_OPTIONS);
 }
 
 export async function upsertSearch(input: Omit<SavedSearch, "id">): Promise<SavedSearch> {
@@ -428,5 +433,5 @@ export async function upsertTenders(incoming: Tender[]) {
         },
       });
     }
-  });
+  }, LONG_TRANSACTION_OPTIONS);
 }
