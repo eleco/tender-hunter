@@ -5,6 +5,7 @@ import { TenderSource } from "@/lib/sources/types";
 import { TedSource } from "@/lib/sources/ted";
 import { BoampSource } from "@/lib/sources/boamp";
 import { FindATenderSource } from "@/lib/sources/findatender";
+import { mapWithConcurrency } from "@/lib/async";
 
 export type JobLogger = {
   log: (...args: unknown[]) => void;
@@ -37,34 +38,39 @@ const SOURCES: TenderSource[] = [
 export async function runImportJob(logger: JobLogger = console): Promise<ImportJobResult> {
   logger.log(`Starting multi-source tender import for ${SOURCES.length} sources...\n`);
 
-  let totalImported = 0;
-  const allTenders: Tender[] = [];
-  const sources: ImportSourceSummary[] = [];
-
-  for (const source of SOURCES) {
+  const sourceRuns = await mapWithConcurrency(SOURCES, SOURCES.length, async (source) => {
     logger.log(`=== Fetching from: ${source.name} ===`);
     try {
       const tenders = await source.fetchActiveTenders();
-      allTenders.push(...tenders);
-      sources.push({
-        id: source.id,
-        name: source.name,
-        count: tenders.length,
-        ok: true,
-      });
       logger.log(`-> ${source.name} returned ${tenders.length} tenders.\n`);
+      return {
+        tenders,
+        summary: {
+          id: source.id,
+          name: source.name,
+          count: tenders.length,
+          ok: true,
+        } satisfies ImportSourceSummary,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      sources.push({
-        id: source.id,
-        name: source.name,
-        count: 0,
-        ok: false,
-        error: message,
-      });
       logger.error(`-> [ERROR] Failed to fetch from ${source.name}:`, error);
+      return {
+        tenders: [] as Tender[],
+        summary: {
+          id: source.id,
+          name: source.name,
+          count: 0,
+          ok: false,
+          error: message,
+        } satisfies ImportSourceSummary,
+      };
     }
-  }
+  });
+
+  const allTenders = sourceRuns.flatMap((run) => run.tenders);
+  const sources = sourceRuns.map((run) => run.summary);
+  let totalImported = 0;
 
   if (allTenders.length > 0) {
     logger.log(`\nAggregating and upserting ${allTenders.length} total tenders...`);

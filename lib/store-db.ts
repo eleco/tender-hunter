@@ -4,6 +4,9 @@ import { getPrismaClient } from "@/lib/db";
 import { extractTenderScopes } from "@/lib/lots";
 import { AiScoreCache } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
+import { mapWithConcurrency } from "@/lib/async";
+
+const DB_WRITE_CONCURRENCY = 8;
 
 function toPrismaLifecycleStatus(status: TenderLifecycleStatus): PrismaTenderLifecycleStatus {
   return status === "archived" ? PrismaTenderLifecycleStatus.archived : PrismaTenderLifecycleStatus.active;
@@ -138,7 +141,7 @@ export async function writeTenders(tenders: Tender[]) {
     await prisma.tender.deleteMany();
   }
 
-  for (const tender of tenders) {
+  await mapWithConcurrency(tenders, DB_WRITE_CONCURRENCY, async (tender) => {
     const input = getTenderWriteInput(tender);
     await prisma.tender.upsert({
       where: { sourceNoticeId: tender.sourceNoticeId },
@@ -163,7 +166,7 @@ export async function writeTenders(tenders: Tender[]) {
         },
       },
     });
-  }
+  });
 }
 
 export async function readSearches(): Promise<SavedSearch[]> {
@@ -193,7 +196,7 @@ export async function writeSearches(searches: SavedSearch[]) {
     await prisma.savedSearch.deleteMany();
   }
 
-  for (const search of searches) {
+  await mapWithConcurrency(searches, DB_WRITE_CONCURRENCY, async (search) => {
     await prisma.savedSearch.upsert({
       where: { id: search.id },
       create: {
@@ -205,7 +208,7 @@ export async function writeSearches(searches: SavedSearch[]) {
         minValue: new Prisma.Decimal(search.minValue),
       },
     });
-  }
+  });
 }
 
 export async function upsertSearch(input: Omit<SavedSearch, "id">): Promise<SavedSearch> {
@@ -397,7 +400,7 @@ export async function getPipelineCounts(): Promise<Record<PipelineStatus, number
 export async function upsertTenders(incoming: Tender[]) {
   const prisma = getPrismaClient();
 
-  for (const tender of incoming) {
+  await mapWithConcurrency(incoming, DB_WRITE_CONCURRENCY, async (tender) => {
     const input = getTenderWriteInput(tender);
     await prisma.tender.upsert({
       where: { sourceNoticeId: tender.sourceNoticeId },
@@ -422,5 +425,5 @@ export async function upsertTenders(incoming: Tender[]) {
         },
       },
     });
-  }
+  });
 }
