@@ -6,7 +6,7 @@ import { AiScoreCache } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
 import { mapWithConcurrency } from "@/lib/async";
 
-const DB_WRITE_CONCURRENCY = 8;
+const SEARCH_WRITE_CONCURRENCY = 8;
 
 function toPrismaLifecycleStatus(status: TenderLifecycleStatus): PrismaTenderLifecycleStatus {
   return status === "archived" ? PrismaTenderLifecycleStatus.archived : PrismaTenderLifecycleStatus.active;
@@ -111,6 +111,16 @@ function getTenderWriteInput(tender: Tender) {
   };
 }
 
+function dedupeTendersBySourceNoticeId(tenders: Tender[]) {
+  const byNoticeId = new Map<string, Tender>();
+
+  for (const tender of tenders) {
+    byNoticeId.set(tender.sourceNoticeId, tender);
+  }
+
+  return [...byNoticeId.values()];
+}
+
 export async function readTenders(): Promise<Tender[]> {
   const prisma = getPrismaClient();
   const tenders = await prisma.tender.findMany({
@@ -127,7 +137,8 @@ export async function readTenders(): Promise<Tender[]> {
 
 export async function writeTenders(tenders: Tender[]) {
   const prisma = getPrismaClient();
-  const keepNoticeIds = tenders.map((tender) => tender.sourceNoticeId);
+  const dedupedTenders = dedupeTendersBySourceNoticeId(tenders);
+  const keepNoticeIds = dedupedTenders.map((tender) => tender.sourceNoticeId);
 
   if (keepNoticeIds.length > 0) {
     await prisma.tender.deleteMany({
@@ -141,7 +152,7 @@ export async function writeTenders(tenders: Tender[]) {
     await prisma.tender.deleteMany();
   }
 
-  await mapWithConcurrency(tenders, DB_WRITE_CONCURRENCY, async (tender) => {
+  for (const tender of dedupedTenders) {
     const input = getTenderWriteInput(tender);
     await prisma.tender.upsert({
       where: { sourceNoticeId: tender.sourceNoticeId },
@@ -166,7 +177,7 @@ export async function writeTenders(tenders: Tender[]) {
         },
       },
     });
-  });
+  }
 }
 
 export async function readSearches(): Promise<SavedSearch[]> {
@@ -196,7 +207,7 @@ export async function writeSearches(searches: SavedSearch[]) {
     await prisma.savedSearch.deleteMany();
   }
 
-  await mapWithConcurrency(searches, DB_WRITE_CONCURRENCY, async (search) => {
+  await mapWithConcurrency(searches, SEARCH_WRITE_CONCURRENCY, async (search) => {
     await prisma.savedSearch.upsert({
       where: { id: search.id },
       create: {
@@ -399,8 +410,9 @@ export async function getPipelineCounts(): Promise<Record<PipelineStatus, number
 
 export async function upsertTenders(incoming: Tender[]) {
   const prisma = getPrismaClient();
+  const dedupedTenders = dedupeTendersBySourceNoticeId(incoming);
 
-  await mapWithConcurrency(incoming, DB_WRITE_CONCURRENCY, async (tender) => {
+  for (const tender of dedupedTenders) {
     const input = getTenderWriteInput(tender);
     await prisma.tender.upsert({
       where: { sourceNoticeId: tender.sourceNoticeId },
@@ -425,5 +437,5 @@ export async function upsertTenders(incoming: Tender[]) {
         },
       },
     });
-  });
+  }
 }
