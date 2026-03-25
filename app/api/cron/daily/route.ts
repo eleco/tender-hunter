@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { runImportJob } from "@/lib/jobs/import-tenders";
 import { runDigestJob } from "@/lib/jobs/send-digest";
 
@@ -26,13 +26,55 @@ async function handleCron(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const importResult = await runImportJob(console);
-    const digestResult = await runDigestJob(console);
+    const startedAt = new Date().toISOString();
+    const runId = crypto.randomUUID();
+
+    console.log("Daily cron job accepted:", {
+      runId,
+      startedAt,
+      method: request.method,
+      path: request.nextUrl.pathname,
+    });
+
+    after(async () => {
+      const backgroundStartedAt = Date.now();
+      try {
+        console.log("Daily cron job started:", {
+          runId,
+          startedAt,
+        });
+
+        const importResult = await runImportJob(console);
+        const digestResult = await runDigestJob(console);
+
+        const finishedAt = new Date().toISOString();
+        const durationMs = Date.now() - backgroundStartedAt;
+
+        console.log("Daily cron job complete:", {
+          runId,
+          startedAt,
+          finishedAt,
+          durationMs,
+          import: importResult,
+          digest: digestResult,
+        });
+      } catch (error) {
+        const failedAt = new Date().toISOString();
+        const durationMs = Date.now() - backgroundStartedAt;
+        console.error("Daily cron job failed:", error);
+        console.error("Daily cron job failure details:", {
+          runId,
+          startedAt,
+          failedAt,
+          durationMs,
+        });
+      }
+    });
 
     return NextResponse.json({
       ok: true,
-      import: importResult,
-      digest: digestResult,
+      runId,
+      accepted: true,
     });
   } catch (error) {
     console.error("Daily cron job failed:", error);
