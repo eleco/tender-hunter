@@ -7,6 +7,7 @@ import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStat
 import { mapWithConcurrency } from "@/lib/async";
 
 const SEARCH_WRITE_CONCURRENCY = 8;
+const TENDER_UPDATE_CONCURRENCY = 8;
 
 function toPrismaLifecycleStatus(status: TenderLifecycleStatus): PrismaTenderLifecycleStatus {
   return status === "archived" ? PrismaTenderLifecycleStatus.archived : PrismaTenderLifecycleStatus.active;
@@ -111,6 +112,23 @@ function getTenderWriteInput(tender: Tender) {
   };
 }
 
+type PreparedTenderWrite = {
+  tenderId: string;
+  sourceNoticeId: string;
+  createData: Omit<ReturnType<typeof getTenderWriteInput>, "cpvCodes" | "lots">;
+  updateData: Omit<ReturnType<typeof getTenderWriteInput>, "id" | "cpvCodes" | "lots">;
+  cpvRows: Array<{ tenderId: string; cpvCode: string }>;
+  lotRows: Array<{
+    id: string;
+    tenderId: string;
+    scopeId: string;
+    kind: TenderScopeKind;
+    title: string;
+    description: string;
+  }>;
+  isNew: boolean;
+};
+
 function dedupeTendersBySourceNoticeId(tenders: Tender[]) {
   const byNoticeId = new Map<string, Tender>();
 
@@ -119,6 +137,154 @@ function dedupeTendersBySourceNoticeId(tenders: Tender[]) {
   }
 
   return [...byNoticeId.values()];
+}
+
+async function prepareTenderWrites(prisma: ReturnType<typeof getPrismaClient>, tenders: Tender[]) {
+  const dedupedTenders = dedupeTendersBySourceNoticeId(tenders);
+  const noticeIds = dedupedTenders.map((tender) => tender.sourceNoticeId);
+  const existing = noticeIds.length > 0
+    ? await prisma.tender.findMany({
+        where: {
+          sourceNoticeId: {
+            in: noticeIds,
+          },
+        },
+        select: {
+          id: true,
+          sourceNoticeId: true,
+        },
+      })
+    : [];
+  const existingByNoticeId = new Map(existing.map((tender) => [tender.sourceNoticeId, tender.id]));
+
+  return dedupedTenders.map((tender): PreparedTenderWrite => {
+    const input = getTenderWriteInput(tender);
+    const tenderId = existingByNoticeId.get(tender.sourceNoticeId) ?? input.id;
+
+    return {
+      tenderId,
+      sourceNoticeId: tender.sourceNoticeId,
+      createData: {
+        ...input,
+        id: tenderId,
+      },
+      updateData: {
+        source: input.source,
+        sourceNoticeId: input.sourceNoticeId,
+        sourceUrl: input.sourceUrl,
+        title: input.title,
+        description: input.description,
+        buyerName: input.buyerName,
+        country: input.country,
+        region: input.region,
+        currency: input.currency,
+        estimatedValue: input.estimatedValue,
+        publishedAt: input.publishedAt,
+        deadlineAt: input.deadlineAt,
+        status: input.status,
+        procedureType: input.procedureType,
+        lifecycleStatus: input.lifecycleStatus,
+        archivedAt: input.archivedAt,
+        archiveReason: input.archiveReason,
+      },
+      cpvRows: input.cpvCodes.map((cpv) => ({
+        tenderId,
+        cpvCode: cpv.cpvCode,
+      })),
+      lotRows: input.lots.map((lot) => ({
+        id: randomUUID(),
+        tenderId,
+        scopeId: lot.scopeId,
+        kind: lot.kind,
+        title: lot.title,
+        description: lot.description,
+      })),
+      isNew: !existingByNoticeId.has(tender.sourceNoticeId),
+    };
+  });
+}
+
+async function replaceTenderChildRows(
+  prisma: ReturnType<typeof getPrismaClient>,
+  writes: PreparedTenderWrite[],
+) {
+  const tenderIds = writes.map((write) => write.tenderId);
+
+  if (tenderIds.length === 0) {
+    return;
+  }
+
+  await prisma.tenderCpvCode.deleteMany({
+    where: {
+      tenderId: {
+        in: tenderIds,
+      },
+    },
+  });
+
+  const cpvRows = writes.flatMap((write) => write.cpvRows);
+  if (cpvRows.length > 0) {
+    await prisma.tenderCpvCode.createMany({
+      data: cpvRows,
+      skipDuplicates: true,
+    });
+  }
+
+  await prisma.tenderLot.deleteMany({
+    where: {
+      tenderId: {
+        in: tenderIds,
+      },
+    },
+  });
+
+  const lotRows = writes.flatMap((write) => write.lotRows);
+  if (lotRows.length > 0) {
+    await prisma.tenderLot.createMany({
+      data: lotRows,
+    });
+  }
+}
+
+async function persistTenders(
+  prisma: ReturnType<typeof getPrismaClient>,
+  tenders: Tender[],
+  options: { deleteMissing: boolean },
+) {
+  const writes = await prepareTenderWrites(prisma, tenders);
+  const keepNoticeIds = writes.map((write) => write.sourceNoticeId);
+
+  if (options.deleteMissing) {
+    if (keepNoticeIds.length > 0) {
+      await prisma.tender.deleteMany({
+        where: {
+          sourceNoticeId: {
+            notIn: keepNoticeIds,
+          },
+        },
+      });
+    } else {
+      await prisma.tender.deleteMany();
+    }
+  }
+
+  const newRows = writes.filter((write) => write.isNew).map((write) => write.createData);
+  if (newRows.length > 0) {
+    await prisma.tender.createMany({
+      data: newRows,
+      skipDuplicates: true,
+    });
+  }
+
+  const existingRows = writes.filter((write) => !write.isNew);
+  await mapWithConcurrency(existingRows, TENDER_UPDATE_CONCURRENCY, async (write) => {
+    await prisma.tender.update({
+      where: { id: write.tenderId },
+      data: write.updateData,
+    });
+  });
+
+  await replaceTenderChildRows(prisma, writes);
 }
 
 export async function readTenders(): Promise<Tender[]> {
@@ -137,47 +303,7 @@ export async function readTenders(): Promise<Tender[]> {
 
 export async function writeTenders(tenders: Tender[]) {
   const prisma = getPrismaClient();
-  const dedupedTenders = dedupeTendersBySourceNoticeId(tenders);
-  const keepNoticeIds = dedupedTenders.map((tender) => tender.sourceNoticeId);
-
-  if (keepNoticeIds.length > 0) {
-    await prisma.tender.deleteMany({
-      where: {
-        sourceNoticeId: {
-          notIn: keepNoticeIds,
-        },
-      },
-    });
-  } else {
-    await prisma.tender.deleteMany();
-  }
-
-  for (const tender of dedupedTenders) {
-    const input = getTenderWriteInput(tender);
-    await prisma.tender.upsert({
-      where: { sourceNoticeId: tender.sourceNoticeId },
-      create: {
-        ...input,
-        cpvCodes: {
-          create: input.cpvCodes,
-        },
-        lots: {
-          create: input.lots,
-        },
-      },
-      update: {
-        ...input,
-        cpvCodes: {
-          deleteMany: {},
-          create: input.cpvCodes,
-        },
-        lots: {
-          deleteMany: {},
-          create: input.lots,
-        },
-      },
-    });
-  }
+  await persistTenders(prisma, tenders, { deleteMissing: true });
 }
 
 export async function readSearches(): Promise<SavedSearch[]> {
@@ -410,32 +536,5 @@ export async function getPipelineCounts(): Promise<Record<PipelineStatus, number
 
 export async function upsertTenders(incoming: Tender[]) {
   const prisma = getPrismaClient();
-  const dedupedTenders = dedupeTendersBySourceNoticeId(incoming);
-
-  for (const tender of dedupedTenders) {
-    const input = getTenderWriteInput(tender);
-    await prisma.tender.upsert({
-      where: { sourceNoticeId: tender.sourceNoticeId },
-      create: {
-        ...input,
-        cpvCodes: {
-          create: input.cpvCodes,
-        },
-        lots: {
-          create: input.lots,
-        },
-      },
-      update: {
-        ...input,
-        cpvCodes: {
-          deleteMany: {},
-          create: input.cpvCodes,
-        },
-        lots: {
-          deleteMany: {},
-          create: input.lots,
-        },
-      },
-    });
-  }
+  await persistTenders(prisma, incoming, { deleteMissing: false });
 }
