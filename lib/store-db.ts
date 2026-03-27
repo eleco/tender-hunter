@@ -160,33 +160,34 @@ async function prepareTenderWrites(prisma: ReturnType<typeof getPrismaClient>, t
   return dedupedTenders.map((tender): PreparedTenderWrite => {
     const input = getTenderWriteInput(tender);
     const tenderId = existingByNoticeId.get(tender.sourceNoticeId) ?? input.id;
+    const updateData = {
+      source: input.source,
+      sourceNoticeId: input.sourceNoticeId,
+      sourceUrl: input.sourceUrl,
+      title: input.title,
+      description: input.description,
+      buyerName: input.buyerName,
+      country: input.country,
+      region: input.region,
+      currency: input.currency,
+      estimatedValue: input.estimatedValue,
+      publishedAt: input.publishedAt,
+      deadlineAt: input.deadlineAt,
+      status: input.status,
+      procedureType: input.procedureType,
+      lifecycleStatus: input.lifecycleStatus,
+      archivedAt: input.archivedAt,
+      archiveReason: input.archiveReason,
+    } satisfies PreparedTenderWrite["updateData"];
 
     return {
       tenderId,
       sourceNoticeId: tender.sourceNoticeId,
       createData: {
-        ...input,
         id: tenderId,
+        ...updateData,
       },
-      updateData: {
-        source: input.source,
-        sourceNoticeId: input.sourceNoticeId,
-        sourceUrl: input.sourceUrl,
-        title: input.title,
-        description: input.description,
-        buyerName: input.buyerName,
-        country: input.country,
-        region: input.region,
-        currency: input.currency,
-        estimatedValue: input.estimatedValue,
-        publishedAt: input.publishedAt,
-        deadlineAt: input.deadlineAt,
-        status: input.status,
-        procedureType: input.procedureType,
-        lifecycleStatus: input.lifecycleStatus,
-        archivedAt: input.archivedAt,
-        archiveReason: input.archiveReason,
-      },
+      updateData,
       cpvRows: input.cpvCodes.map((cpv) => ({
         tenderId,
         cpvCode: cpv.cpvCode,
