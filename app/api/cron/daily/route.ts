@@ -44,8 +44,13 @@ async function handleCron(request: NextRequest) {
           startedAt,
         });
 
+        const importStartedAt = Date.now();
         const importResult = await runImportJob(console);
-        const digestResult = await runDigestJob(console);
+        const importDurationMs = Date.now() - importStartedAt;
+        const digestResult = await runDigestJob(console, {
+          totalExtracted: importResult.totalImported,
+          durationMs: importDurationMs,
+        });
 
         const finishedAt = new Date().toISOString();
         const durationMs = Date.now() - backgroundStartedAt;

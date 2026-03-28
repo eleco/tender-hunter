@@ -12,6 +12,11 @@ export type DigestJobResult = {
   subject: string;
 };
 
+export type DigestRunInfo = {
+  totalExtracted: number;
+  durationMs: number;
+};
+
 function formatDigestDate() {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "full",
@@ -33,7 +38,36 @@ function getTenderUrl(tenderId: string) {
   return `${config.appUrl.replace(/\/$/, "")}/tenders/${tenderId}`;
 }
 
-function buildImportedTenderDigest(data: Awaited<ReturnType<typeof getDashboardData>>, tenders: Tender[]) {
+function formatDuration(durationMs: number) {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function getRunSummaryLines(runInfo?: DigestRunInfo) {
+  if (!runInfo) return [];
+
+  return [
+    `Extracted this run: ${runInfo.totalExtracted}`,
+    `Import duration: ${formatDuration(runInfo.durationMs)}`,
+  ];
+}
+
+function getRunSummaryRows(runInfo?: DigestRunInfo) {
+  if (!runInfo) return "";
+
+  return `
+    <tr><td style="padding: 4px 12px 4px 0;"><strong>Extracted this run</strong></td><td>${runInfo.totalExtracted}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0;"><strong>Import duration</strong></td><td>${escapeHtml(formatDuration(runInfo.durationMs))}</td></tr>
+  `;
+}
+
+function buildImportedTenderDigest(
+  data: Awaited<ReturnType<typeof getDashboardData>>,
+  tenders: Tender[],
+  runInfo?: DigestRunInfo,
+) {
   const generatedAt = formatDigestDate();
   const recentTenders = tenders.slice(0, 10);
   const subject = `Tender Hunter daily scanner results: ${recentTenders.length} recent tenders`;
@@ -43,6 +77,7 @@ function buildImportedTenderDigest(data: Awaited<ReturnType<typeof getDashboardD
     `Active searches: ${data.activeSearchCount}`,
     `Active tenders: ${data.snapshot.activeTenders}`,
     `Archived tenders: ${data.snapshot.archivedTenders}`,
+    ...getRunSummaryLines(runInfo),
     `Recent tenders shown: ${recentTenders.length}`,
     "",
   ];
@@ -94,6 +129,7 @@ function buildImportedTenderDigest(data: Awaited<ReturnType<typeof getDashboardD
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active searches</strong></td><td>${data.activeSearchCount}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active tenders</strong></td><td>${data.snapshot.activeTenders}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Archived tenders</strong></td><td>${data.snapshot.archivedTenders}</td></tr>
+          ${getRunSummaryRows(runInfo)}
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Recent tenders shown</strong></td><td>${recentTenders.length}</td></tr>
         </table>
         ${htmlItems}
@@ -110,7 +146,7 @@ function buildImportedTenderDigest(data: Awaited<ReturnType<typeof getDashboardD
   };
 }
 
-function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
+function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>, runInfo?: DigestRunInfo) {
   const generatedAt = formatDigestDate();
   const topMatches = data.matches.slice(0, 10);
   const subject = `Tender Hunter daily scanner results: ${topMatches.length} top matches`;
@@ -120,6 +156,7 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
     `Active searches: ${data.activeSearchCount}`,
     `Active tenders: ${data.snapshot.activeTenders}`,
     `Archived tenders: ${data.snapshot.archivedTenders}`,
+    ...getRunSummaryLines(runInfo),
     `Strong matches: ${data.snapshot.strongMatches}`,
     `Top matches shown: ${topMatches.length}`,
     "",
@@ -169,6 +206,7 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active searches</strong></td><td>${data.activeSearchCount}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active tenders</strong></td><td>${data.snapshot.activeTenders}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Archived tenders</strong></td><td>${data.snapshot.archivedTenders}</td></tr>
+          ${getRunSummaryRows(runInfo)}
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Strong matches</strong></td><td>${data.snapshot.strongMatches}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Top matches shown</strong></td><td>${topMatches.length}</td></tr>
         </table>
@@ -186,12 +224,12 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
   };
 }
 
-function buildDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
+function buildDigest(data: Awaited<ReturnType<typeof getDashboardData>>, runInfo?: DigestRunInfo) {
   if (data.activeSearchCount === 0 && data.allTenders) {
-    return buildImportedTenderDigest(data, data.allTenders);
+    return buildImportedTenderDigest(data, data.allTenders, runInfo);
   }
 
-  return buildMatchDigest(data);
+  return buildMatchDigest(data, runInfo);
 }
 
 async function sendViaMailgun(subject: string, text: string, html: string, logger: JobLogger = console) {
@@ -248,9 +286,12 @@ async function sendViaMailgun(subject: string, text: string, html: string, logge
   };
 }
 
-export async function runDigestJob(logger: JobLogger = console): Promise<DigestJobResult> {
+export async function runDigestJob(
+  logger: JobLogger = console,
+  runInfo?: DigestRunInfo,
+): Promise<DigestJobResult> {
   const data = await getDashboardData();
-  const digest = buildDigest(data);
+  const digest = buildDigest(data, runInfo);
 
   logger.log(digest.text);
   const delivery = await sendViaMailgun(digest.subject, digest.text, digest.html, logger);
