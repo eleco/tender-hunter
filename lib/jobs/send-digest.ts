@@ -38,6 +38,10 @@ function getTenderUrl(tenderId: string) {
   return `${config.appUrl.replace(/\/$/, "")}/tenders/${tenderId}`;
 }
 
+function getWebsiteUrl() {
+  return config.appUrl.replace(/\/$/, "");
+}
+
 function formatDuration(durationMs: number) {
   const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -74,6 +78,7 @@ function buildImportedTenderDigest(
   const summaryLines = [
     "Tender Hunter daily digest",
     `Generated: ${generatedAt}`,
+    `Website: ${getWebsiteUrl()}`,
     `Active searches: ${data.activeSearchCount}`,
     `Active tenders: ${data.snapshot.activeTenders}`,
     `Archived tenders: ${data.snapshot.archivedTenders}`,
@@ -125,6 +130,9 @@ function buildImportedTenderDigest(
       <body style="font-family: Georgia, serif; color: #1c1917; line-height: 1.5;">
         <h1 style="margin-bottom: 8px;">Tender Hunter daily digest</h1>
         <p style="margin-top: 0; color: #57534e;">Generated ${escapeHtml(generatedAt)}</p>
+        <p style="margin: 0 0 16px;">
+          <a href="${escapeHtml(getWebsiteUrl())}">Open Tender Hunter</a>
+        </p>
         <table style="border-collapse: collapse; margin: 18px 0;">
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active searches</strong></td><td>${data.activeSearchCount}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active tenders</strong></td><td>${data.snapshot.activeTenders}</td></tr>
@@ -153,6 +161,7 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>, ru
   const summaryLines = [
     "Tender Hunter daily digest",
     `Generated: ${generatedAt}`,
+    `Website: ${getWebsiteUrl()}`,
     `Active searches: ${data.activeSearchCount}`,
     `Active tenders: ${data.snapshot.activeTenders}`,
     `Archived tenders: ${data.snapshot.archivedTenders}`,
@@ -202,6 +211,9 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>, ru
       <body style="font-family: Georgia, serif; color: #1c1917; line-height: 1.5;">
         <h1 style="margin-bottom: 8px;">Tender Hunter daily digest</h1>
         <p style="margin-top: 0; color: #57534e;">Generated ${escapeHtml(generatedAt)}</p>
+        <p style="margin: 0 0 16px;">
+          <a href="${escapeHtml(getWebsiteUrl())}">Open Tender Hunter</a>
+        </p>
         <table style="border-collapse: collapse; margin: 18px 0;">
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active searches</strong></td><td>${data.activeSearchCount}</td></tr>
           <tr><td style="padding: 4px 12px 4px 0;"><strong>Active tenders</strong></td><td>${data.snapshot.activeTenders}</td></tr>
