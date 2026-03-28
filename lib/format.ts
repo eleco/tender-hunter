@@ -37,6 +37,26 @@ export function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+export function formatDateTime(value: string | null, timeZone: string = "Europe/Madrid") {
+  if (!value) return "Unknown";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(value));
+}
+
+export function formatDurationMs(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "Unknown";
+  const totalSeconds = Math.max(0, Math.round(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
 export function parseCsvList(value: string): string[] {
   return value
     .split(",")

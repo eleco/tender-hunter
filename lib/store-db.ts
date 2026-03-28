@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, PipelineStatus as PrismaPipelineStatus, SavedSearch as PrismaSavedSearch, PipelineEntry as PrismaPipelineEntry, Tender as PrismaTender, TenderLifecycleStatus as PrismaTenderLifecycleStatus, TenderScopeKind, TenderCpvCode } from "@prisma/client";
+import { Prisma, PipelineStatus as PrismaPipelineStatus, SavedSearch as PrismaSavedSearch, PipelineEntry as PrismaPipelineEntry, Tender as PrismaTender, TenderLifecycleStatus as PrismaTenderLifecycleStatus, TenderScopeKind, TenderCpvCode, CronRunState as PrismaCronRunState } from "@prisma/client";
 import { getPrismaClient } from "@/lib/db";
 import { extractTenderScopes } from "@/lib/lots";
-import { AiScoreCache } from "@/lib/store-types";
+import { AiScoreCache, CronRunRecord, ImportRunTimings, ImportSourceTiming } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
 import { mapWithConcurrency } from "@/lib/async";
 
@@ -76,6 +76,32 @@ function mapPipelineEntry(entry: PrismaPipelineEntry): PipelineEntry {
     updatedAt: entry.updatedAt.toISOString(),
     notes: entry.notes ?? undefined,
   };
+}
+
+function mapCronRun(run: PrismaCronRunState): CronRunRecord {
+  return {
+    key: "daily-cron",
+    runId: run.runId,
+    status: run.status as CronRunRecord["status"],
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    failedAt: run.failedAt?.toISOString() ?? null,
+    durationMs: run.durationMs,
+    totalExtracted: run.totalExtracted,
+    aiScoringRan: run.aiScoringRan,
+    activeSearches: run.activeSearches,
+    digestMode: (run.digestMode as CronRunRecord["digestMode"]) ?? null,
+    digestDelivered: run.digestDelivered,
+    digestItemCount: run.digestItemCount,
+    error: run.error,
+    sourceMetrics: ((run.sourceMetrics as ImportSourceTiming[] | null) ?? []),
+    timings: (run.timings as ImportRunTimings | null) ?? null,
+    updatedAt: run.updatedAt.toISOString(),
+  };
+}
+
+function toNullableJsonInput(value: Prisma.InputJsonValue | null) {
+  return value === null ? Prisma.JsonNull : value;
 }
 
 function getTenderWriteInput(tender: Tender) {
@@ -538,4 +564,66 @@ export async function getPipelineCounts(): Promise<Record<PipelineStatus, number
 export async function upsertTenders(incoming: Tender[]) {
   const prisma = getPrismaClient();
   await persistTenders(prisma, incoming, { deleteMissing: false });
+}
+
+export async function readCronRun(): Promise<CronRunRecord | null> {
+  const prisma = getPrismaClient();
+  try {
+    const run = await prisma.cronRunState.findUnique({
+      where: { key: "daily-cron" },
+    });
+
+    return run ? mapCronRun(run) : null;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2021" || error.code === "P2022")
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function writeCronRun(run: CronRunRecord) {
+  const prisma = getPrismaClient();
+  await prisma.cronRunState.upsert({
+    where: { key: run.key },
+    create: {
+      key: run.key,
+      runId: run.runId,
+      status: run.status,
+      startedAt: new Date(run.startedAt),
+      finishedAt: run.finishedAt ? new Date(run.finishedAt) : null,
+      failedAt: run.failedAt ? new Date(run.failedAt) : null,
+      durationMs: run.durationMs,
+      totalExtracted: run.totalExtracted,
+      aiScoringRan: run.aiScoringRan,
+      activeSearches: run.activeSearches,
+      digestMode: run.digestMode,
+      digestDelivered: run.digestDelivered,
+      digestItemCount: run.digestItemCount,
+      error: run.error,
+      sourceMetrics: run.sourceMetrics as Prisma.InputJsonValue,
+      timings: toNullableJsonInput(run.timings as Prisma.InputJsonValue | null),
+    },
+    update: {
+      runId: run.runId,
+      status: run.status,
+      startedAt: new Date(run.startedAt),
+      finishedAt: run.finishedAt ? new Date(run.finishedAt) : null,
+      failedAt: run.failedAt ? new Date(run.failedAt) : null,
+      durationMs: run.durationMs,
+      totalExtracted: run.totalExtracted,
+      aiScoringRan: run.aiScoringRan,
+      activeSearches: run.activeSearches,
+      digestMode: run.digestMode,
+      digestDelivered: run.digestDelivered,
+      digestItemCount: run.digestItemCount,
+      error: run.error,
+      sourceMetrics: run.sourceMetrics as Prisma.InputJsonValue,
+      timings: toNullableJsonInput(run.timings as Prisma.InputJsonValue | null),
+    },
+  });
 }

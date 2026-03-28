@@ -6,6 +6,8 @@ import {
   deadlineUrgency,
   formatCurrency,
   formatDate,
+  formatDateTime,
+  formatDurationMs,
   getScoreClass,
 } from "@/lib/format";
 
@@ -124,6 +126,7 @@ export default async function DashboardPage({ searchParams }: Props) {
     (pipeline.watching ?? 0) + (pipeline.drafting ?? 0) + (pipeline.submitted ?? 0);
   const showingAllTenders =
     data.view !== "active" || data.activeSearchCount === 0 || Boolean(country) || Boolean(keyword);
+  const lastRun = data.snapshot.lastRun;
 
   return (
     <main className="page-shell">
@@ -218,6 +221,72 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div className="metric-value">{data.recurringFamilies}</div>
           <div className="metric-note">Buyer/CPV families seen more than once across live and archived notices.</div>
         </div>
+      </section>
+
+      <section className="card section-stack">
+        <div>
+          <div className="section-label">Scanner health</div>
+          <h2 className="title-md">Last cron run</h2>
+        </div>
+
+        {lastRun ? (
+          <>
+            <div className="country-list">
+              <div className="card-inset">
+                <div className="section-label">Status</div>
+                <div className="kpi-sm">{lastRun.status}</div>
+              </div>
+              <div className="card-inset">
+                <div className="section-label">Started</div>
+                <div className="kpi-sm">{formatDateTime(lastRun.startedAt)}</div>
+              </div>
+              <div className="card-inset">
+                <div className="section-label">Duration</div>
+                <div className="kpi-sm">{formatDurationMs(lastRun.durationMs)}</div>
+              </div>
+              <div className="card-inset">
+                <div className="section-label">Extracted</div>
+                <div className="kpi-sm">{lastRun.totalExtracted ?? 0}</div>
+              </div>
+            </div>
+
+            <div className="country-list">
+              <div className="card-inset">
+                <div className="section-label">Fetch</div>
+                <div className="kpi-sm">{formatDurationMs(lastRun.timings?.fetchMs ?? null)}</div>
+              </div>
+              <div className="card-inset">
+                <div className="section-label">DB write</div>
+                <div className="kpi-sm">{formatDurationMs(lastRun.timings?.dbWriteMs ?? null)}</div>
+              </div>
+              <div className="card-inset">
+                <div className="section-label">AI scoring</div>
+                <div className="kpi-sm">{formatDurationMs(lastRun.timings?.aiScoringMs ?? null)}</div>
+              </div>
+            </div>
+
+            {lastRun.sourceMetrics.length > 0 && (
+              <div className="stack">
+                {lastRun.sourceMetrics.map((source) => (
+                  <div key={source.id} className="card-inset">
+                    <strong>{source.name}</strong>
+                    <div className="metric-note" style={{ marginTop: 6 }}>
+                      {source.count} notices · {formatDurationMs(source.durationMs)} · {source.ok ? "ok" : source.error ?? "failed"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {lastRun.error && (
+              <p className="note" style={{ margin: 0 }}>
+                Last error: {lastRun.error}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="empty-state">No cron run has been recorded yet.</p>
+        )}
       </section>
 
       <section className="card section-stack">

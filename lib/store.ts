@@ -1,8 +1,10 @@
 import type { PipelineStatus, SavedSearch, Tender } from "@/lib/types";
 import * as databaseStore from "@/lib/store-db";
 import * as fileStore from "@/lib/store-file";
+import type { CronRunRecord } from "@/lib/store-types";
 
 export type { AiScoreEntry, AiScoreCache } from "@/lib/store-types";
+export type { CronRunRecord, ImportRunTimings, ImportSourceTiming } from "@/lib/store-types";
 
 export function getStorageBackend() {
   const configured = process.env.STORAGE_BACKEND;
@@ -76,4 +78,12 @@ export async function getPipelineCounts() {
 
 export async function upsertTenders(incoming: Tender[]) {
   return getStore().upsertTenders(incoming);
+}
+
+export async function readCronRun() {
+  return getStore().readCronRun();
+}
+
+export async function writeCronRun(run: CronRunRecord) {
+  return getStore().writeCronRun(run);
 }

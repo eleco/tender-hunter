@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { runImportJob } from "@/lib/jobs/import-tenders";
 import { runDigestJob } from "@/lib/jobs/send-digest";
+import { writeCronRun } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,26 @@ async function handleCron(request: NextRequest) {
       path: request.nextUrl.pathname,
     });
 
+    await writeCronRun({
+      key: "daily-cron",
+      runId,
+      status: "running",
+      startedAt,
+      finishedAt: null,
+      failedAt: null,
+      durationMs: null,
+      totalExtracted: null,
+      aiScoringRan: null,
+      activeSearches: null,
+      digestMode: null,
+      digestDelivered: null,
+      digestItemCount: null,
+      error: null,
+      sourceMetrics: [],
+      timings: null,
+      updatedAt: new Date().toISOString(),
+    });
+
     after(async () => {
       const backgroundStartedAt = Date.now();
       try {
@@ -55,6 +76,26 @@ async function handleCron(request: NextRequest) {
         const finishedAt = new Date().toISOString();
         const durationMs = Date.now() - backgroundStartedAt;
 
+        await writeCronRun({
+          key: "daily-cron",
+          runId,
+          status: "succeeded",
+          startedAt,
+          finishedAt,
+          failedAt: null,
+          durationMs,
+          totalExtracted: importResult.totalImported,
+          aiScoringRan: importResult.aiScoringRan,
+          activeSearches: importResult.activeSearches,
+          digestMode: digestResult.mode,
+          digestDelivered: digestResult.delivered,
+          digestItemCount: digestResult.itemCount,
+          error: null,
+          sourceMetrics: importResult.sources,
+          timings: importResult.timings,
+          updatedAt: finishedAt,
+        });
+
         console.log("Daily cron job complete:", {
           runId,
           startedAt,
@@ -67,6 +108,25 @@ async function handleCron(request: NextRequest) {
         const failedAt = new Date().toISOString();
         const durationMs = Date.now() - backgroundStartedAt;
         console.error("Daily cron job failed:", error);
+        await writeCronRun({
+          key: "daily-cron",
+          runId,
+          status: "failed",
+          startedAt,
+          finishedAt: null,
+          failedAt,
+          durationMs,
+          totalExtracted: null,
+          aiScoringRan: null,
+          activeSearches: null,
+          digestMode: null,
+          digestDelivered: null,
+          digestItemCount: null,
+          error: error instanceof Error ? error.message : "Unknown error",
+          sourceMetrics: [],
+          timings: null,
+          updatedAt: failedAt,
+        });
         console.error("Daily cron job failure details:", {
           runId,
           startedAt,

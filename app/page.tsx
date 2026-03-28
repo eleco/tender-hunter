@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDashboardSnapshot } from "@/lib/repository";
+import { formatDateTime, formatDurationMs } from "@/lib/format";
 
 const OPERATING_PRINCIPLES = [
   "Supplier-profile matching instead of raw keyword spam.",
@@ -34,6 +35,7 @@ const PROCESS_STEPS = [
 
 export default async function HomePage() {
   const snapshot = await getDashboardSnapshot();
+  const lastRun = snapshot.lastRun;
 
   return (
     <main className="page-shell">
@@ -77,6 +79,18 @@ export default async function HomePage() {
               <div className="section-label">MVP snapshot</div>
               <div className="kpi">{snapshot.totalSearches}</div>
               <p className="metric-note">Saved search profiles are already shaping the ranking layer.</p>
+            </div>
+
+            <div className="card-inset">
+              <div className="section-label">Last scanner run</div>
+              <div className="kpi-sm">
+                {lastRun ? lastRun.status : "No runs yet"}
+              </div>
+              <p className="metric-note" style={{ marginBottom: 0 }}>
+                {lastRun
+                  ? `${formatDateTime(lastRun.startedAt)} · ${formatDurationMs(lastRun.durationMs)} · ${lastRun.totalExtracted ?? 0} extracted`
+                  : "The scheduled import has not written a run record yet."}
+              </p>
             </div>
 
             <div className="insight-strip">

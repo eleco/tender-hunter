@@ -124,3 +124,24 @@ model AiScore {
   @@index([searchId])
   @@index([tenderId])
 }
+
+model CronRunState {
+  key             String   @id
+  runId           String
+  status          String
+  startedAt       DateTime
+  finishedAt      DateTime?
+  failedAt        DateTime?
+  durationMs      Int?
+  totalExtracted  Int?
+  aiScoringRan    Boolean?
+  activeSearches  Int?
+  digestMode      String?
+  digestDelivered Boolean?
+  digestItemCount Int?
+  error           String?
+  sourceMetrics   Json?
+  timings         Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

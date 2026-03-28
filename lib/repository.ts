@@ -1,4 +1,4 @@
-import { readTenders, readSearches, readAiScores, upsertSearch, deleteSearch as storeDeleteSearch, setSearchEnabled as storeSetSearchEnabled, AiScoreCache, getPipelineEntry, getPipelineCounts, readPipeline } from "@/lib/store";
+import { readTenders, readSearches, readAiScores, upsertSearch, deleteSearch as storeDeleteSearch, setSearchEnabled as storeSetSearchEnabled, AiScoreCache, getPipelineEntry, getPipelineCounts, readPipeline, readCronRun } from "@/lib/store";
 import { buildPipelineFeedbackMap } from "@/lib/pipeline-learning";
 import { findKeywordMatch } from "@/lib/keywords";
 import { scoreTender, scoreTenderForSME } from "@/lib/scoring";
@@ -201,6 +201,7 @@ export async function getDashboardSnapshot() {
     totalProfiles: searches.length,
     strongMatches: matches.filter((match) => match.score >= 70).length,
     pipeline: await getPipelineCounts(),
+    lastRun: await readCronRun(),
   };
 }
 
@@ -317,6 +318,7 @@ export async function getDashboardData(
   const feedbackByTender = buildPipelineFeedbackMap(allTenders, await readPipeline());
   const lifecycleCounts = countByLifecycle(allTenders);
   const recurringFamilies = getRecurringTenderSignals(allTenders);
+  const lastRun = await readCronRun();
 
   let tenders = country
     ? tendersForView.filter((t) => t.country === country)
@@ -352,6 +354,7 @@ export async function getDashboardData(
         strongMatches: allMatches.filter((m) => m.score >= 70).length,
         bySource,
         pipeline: pipelineCounts,
+        lastRun,
       },
       allCountries,
       topKeywords,
@@ -379,6 +382,7 @@ export async function getDashboardData(
       strongMatches: allMatches.filter((match) => match.score >= 70).length,
       bySource,
       pipeline: pipelineCounts,
+      lastRun,
     },
     allCountries,
     topKeywords,

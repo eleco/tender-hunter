@@ -2,13 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { SavedSearch, Tender, PipelineEntry, PipelineStatus, TenderLifecycleStatus } from "@/lib/types";
-import { AiScoreCache } from "@/lib/store-types";
+import { AiScoreCache, CronRunRecord } from "@/lib/store-types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const TENDERS_FILE = path.join(DATA_DIR, "tenders.json");
 const SEARCHES_FILE = path.join(DATA_DIR, "searches.json");
 const AI_SCORES_FILE = path.join(DATA_DIR, "ai-scores.json");
 const PIPELINE_FILE = path.join(DATA_DIR, "pipeline.json");
+const CRON_RUN_FILE = path.join(DATA_DIR, "cron-run.json");
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -213,4 +214,12 @@ export async function upsertTenders(incoming: Tender[]) {
       (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
     ),
   );
+}
+
+export async function readCronRun(): Promise<CronRunRecord | null> {
+  return readJson<CronRunRecord | null>(CRON_RUN_FILE, null);
+}
+
+export async function writeCronRun(run: CronRunRecord) {
+  writeJson(CRON_RUN_FILE, run);
 }
