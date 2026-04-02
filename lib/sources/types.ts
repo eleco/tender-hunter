@@ -1,4 +1,17 @@
 import { Tender } from "@/lib/types";
+import { RunBudget } from "@/lib/runtime-budget";
+
+export type TenderSourceFetchOptions = {
+    since?: string | null;
+    budget?: RunBudget;
+};
+
+export type TenderSourceFetchResult = {
+    tenders: Tender[];
+    nextSince?: string | null;
+    complete?: boolean;
+    stopReason?: string | null;
+};
 
 export interface TenderSource {
     /**
@@ -15,5 +28,5 @@ export interface TenderSource {
      * Fetches active (open) tenders from the source.
      * Internal pagination/looping should be handled within this method.
      */
-    fetchActiveTenders(): Promise<Tender[]>;
+    fetchActiveTenders(options?: TenderSourceFetchOptions): Promise<TenderSourceFetchResult>;
 }

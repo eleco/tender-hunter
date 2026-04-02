@@ -6,7 +6,8 @@ export type AiScoreEntry = {
 
 export type AiScoreCache = Record<string, AiScoreEntry>; // key: `${searchId}:${sourceNoticeId}:${scopeId}`
 
-export type CronRunStatus = "running" | "succeeded" | "failed";
+export type CronRunStatus = "running" | "succeeded" | "partial" | "failed";
+export type SourceCheckpointMap = Record<string, string>;
 
 export type ImportSourceTiming = {
   id: string;
@@ -15,6 +16,7 @@ export type ImportSourceTiming = {
   ok: boolean;
   error?: string;
   durationMs: number;
+  stoppedEarly?: boolean;
 };
 
 export type ImportRunTimings = {
@@ -22,6 +24,8 @@ export type ImportRunTimings = {
   dbWriteMs: number;
   aiScoringMs: number;
   totalMs: number;
+  budgetLimitMs: number;
+  budgetRemainingMs: number;
 };
 
 export type CronRunRecord = {
@@ -39,7 +43,9 @@ export type CronRunRecord = {
   digestDelivered: boolean | null;
   digestItemCount: number | null;
   error: string | null;
+  stopReason: string | null;
   sourceMetrics: ImportSourceTiming[];
+  sourceCheckpoints: SourceCheckpointMap;
   timings: ImportRunTimings | null;
   updatedAt: string;
 };

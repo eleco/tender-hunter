@@ -86,9 +86,9 @@ export type TedSearchResponse = {
   page?: number;
 };
 
-export async function searchTedNotices(page = 1): Promise<TedSearchResponse> {
+export async function searchTedNotices(page = 1, queryOverride?: string): Promise<TedSearchResponse> {
   const endpoint = `${config.tedApiBaseUrl}/v3/notices/search`;
-  const baseQuery = config.tedQuery || DEFAULT_TED_QUERY;
+  const baseQuery = queryOverride || config.tedQuery || DEFAULT_TED_QUERY;
   const queryStr = baseQuery.includes("SORT BY")
     ? baseQuery
     : `${baseQuery} SORT BY PD DESC`;

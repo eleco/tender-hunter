@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, PipelineStatus as PrismaPipelineStatus, SavedSearch as PrismaSavedSearch, PipelineEntry as PrismaPipelineEntry, Tender as PrismaTender, TenderLifecycleStatus as PrismaTenderLifecycleStatus, TenderScopeKind, TenderCpvCode, CronRunState as PrismaCronRunState } from "@prisma/client";
 import { getPrismaClient } from "@/lib/db";
 import { extractTenderScopes } from "@/lib/lots";
-import { AiScoreCache, CronRunRecord, ImportRunTimings, ImportSourceTiming } from "@/lib/store-types";
+import { AiScoreCache, CronRunRecord, ImportRunTimings, ImportSourceTiming, SourceCheckpointMap } from "@/lib/store-types";
 import { PipelineEntry, PipelineStatus, SavedSearch, Tender, TenderLifecycleStatus } from "@/lib/types";
 import { mapWithConcurrency } from "@/lib/async";
 
@@ -94,7 +94,9 @@ function mapCronRun(run: PrismaCronRunState): CronRunRecord {
     digestDelivered: run.digestDelivered,
     digestItemCount: run.digestItemCount,
     error: run.error,
+    stopReason: run.stopReason,
     sourceMetrics: ((run.sourceMetrics as ImportSourceTiming[] | null) ?? []),
+    sourceCheckpoints: ((run.sourceCheckpoints as SourceCheckpointMap | null) ?? {}),
     timings: (run.timings as ImportRunTimings | null) ?? null,
     updatedAt: run.updatedAt.toISOString(),
   };
@@ -605,7 +607,9 @@ export async function writeCronRun(run: CronRunRecord) {
       digestDelivered: run.digestDelivered,
       digestItemCount: run.digestItemCount,
       error: run.error,
+      stopReason: run.stopReason,
       sourceMetrics: run.sourceMetrics as Prisma.InputJsonValue,
+      sourceCheckpoints: run.sourceCheckpoints as Prisma.InputJsonValue,
       timings: toNullableJsonInput(run.timings as Prisma.InputJsonValue | null),
     },
     update: {
@@ -622,7 +626,9 @@ export async function writeCronRun(run: CronRunRecord) {
       digestDelivered: run.digestDelivered,
       digestItemCount: run.digestItemCount,
       error: run.error,
+      stopReason: run.stopReason,
       sourceMetrics: run.sourceMetrics as Prisma.InputJsonValue,
+      sourceCheckpoints: run.sourceCheckpoints as Prisma.InputJsonValue,
       timings: toNullableJsonInput(run.timings as Prisma.InputJsonValue | null),
     },
   });

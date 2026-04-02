@@ -27,10 +27,13 @@ export type BoampResponse = {
 
 const BOAMP_API = "https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records";
 
-/** Returns BOAMP call-for-tender notices published in the last 60 days. */
-export async function searchBoampNotices(offset = 0, limit = 100): Promise<BoampResponse> {
-  const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
-    .toISOString()
+/** Returns BOAMP call-for-tender notices published since the provided date. */
+export async function searchBoampNotices(
+  offset = 0,
+  limit = 100,
+  sinceDate?: string,
+): Promise<BoampResponse> {
+  const since = (sinceDate ?? new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
     .split("T")[0];
 
   // IT-related descripteur codes:

@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { runImportJob } from "@/lib/jobs/import-tenders";
 import { runDigestJob } from "@/lib/jobs/send-digest";
-import { writeCronRun } from "@/lib/store";
+import { readCronRun, writeCronRun } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +29,8 @@ async function handleCron(request: NextRequest) {
 
     const startedAt = new Date().toISOString();
     const runId = crypto.randomUUID();
+    const previousRun = await readCronRun();
+    const sourceCheckpoints = previousRun?.sourceCheckpoints ?? {};
 
     console.log("Daily cron job accepted:", {
       runId,
@@ -52,7 +54,9 @@ async function handleCron(request: NextRequest) {
       digestDelivered: null,
       digestItemCount: null,
       error: null,
+      stopReason: null,
       sourceMetrics: [],
+      sourceCheckpoints,
       timings: null,
       updatedAt: new Date().toISOString(),
     });
@@ -65,13 +69,8 @@ async function handleCron(request: NextRequest) {
           startedAt,
         });
 
-        const importStartedAt = Date.now();
-        const importResult = await runImportJob(console);
-        const importDurationMs = Date.now() - importStartedAt;
-        const digestResult = await runDigestJob(console, {
-          totalExtracted: importResult.totalImported,
-          durationMs: importDurationMs,
-        });
+        const importResult = await runImportJob(console, { sourceCheckpoints });
+        const digestResult = await runDigestJob(console);
 
         const finishedAt = new Date().toISOString();
         const durationMs = Date.now() - backgroundStartedAt;
@@ -79,7 +78,7 @@ async function handleCron(request: NextRequest) {
         await writeCronRun({
           key: "daily-cron",
           runId,
-          status: "succeeded",
+          status: importResult.completed ? "succeeded" : "partial",
           startedAt,
           finishedAt,
           failedAt: null,
@@ -90,8 +89,10 @@ async function handleCron(request: NextRequest) {
           digestMode: digestResult.mode,
           digestDelivered: digestResult.delivered,
           digestItemCount: digestResult.itemCount,
-          error: null,
+          error: importResult.completed ? null : importResult.stopReason,
+          stopReason: importResult.stopReason,
           sourceMetrics: importResult.sources,
+          sourceCheckpoints: importResult.sourceCheckpoints,
           timings: importResult.timings,
           updatedAt: finishedAt,
         });
@@ -123,7 +124,9 @@ async function handleCron(request: NextRequest) {
           digestDelivered: null,
           digestItemCount: null,
           error: error instanceof Error ? error.message : "Unknown error",
+          stopReason: null,
           sourceMetrics: [],
+          sourceCheckpoints,
           timings: null,
           updatedAt: failedAt,
         });

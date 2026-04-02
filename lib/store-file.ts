@@ -217,7 +217,18 @@ export async function upsertTenders(incoming: Tender[]) {
 }
 
 export async function readCronRun(): Promise<CronRunRecord | null> {
-  return readJson<CronRunRecord | null>(CRON_RUN_FILE, null);
+  const run = readJson<CronRunRecord | null>(CRON_RUN_FILE, null);
+  if (!run) {
+    return null;
+  }
+
+  return {
+    ...run,
+    stopReason: run.stopReason ?? null,
+    sourceMetrics: run.sourceMetrics ?? [],
+    sourceCheckpoints: run.sourceCheckpoints ?? {},
+    timings: run.timings ?? null,
+  };
 }
 
 export async function writeCronRun(run: CronRunRecord) {

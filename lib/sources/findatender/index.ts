@@ -1,4 +1,4 @@
-import { TenderSource } from "../types";
+import { TenderSource, TenderSourceFetchOptions, TenderSourceFetchResult } from "../types";
 import { searchFindTenderNotices, fetchFindTenderNextPage, FindTenderResponse } from "./client";
 import { normalizeFindTenderRelease } from "./normalize";
 import { Tender } from "@/lib/types";
@@ -10,15 +10,23 @@ export const FindATenderSource: TenderSource = {
   id: "find-a-tender",
   name: "Find a Tender (UK)",
 
-  async fetchActiveTenders(): Promise<Tender[]> {
+  async fetchActiveTenders(options: TenderSourceFetchOptions = {}): Promise<TenderSourceFetchResult> {
     const allTenders: Tender[] = [];
-    const updatedFrom = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const fetchStartedAt = new Date().toISOString();
+    const updatedFrom = options.since ?? new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     let page = 1;
     let nextLink: string | undefined;
+    let stopReason: string | null = null;
 
     console.log(`[${this.name}] Starting import (max ${MAX_PAGES} pages)...`);
 
     while (page <= MAX_PAGES) {
+      if (options.budget?.shouldStop(45000)) {
+        stopReason = "Stopped early before Find a Tender exhausted its pages to stay within the runtime budget.";
+        console.log(`[${this.name}] ${stopReason}`);
+        break;
+      }
+
       console.log(`[${this.name}] Fetching page ${page}...`);
       try {
         // First page uses the search function; subsequent pages follow nextLink
@@ -46,6 +54,11 @@ export const FindATenderSource: TenderSource = {
     }
 
     console.log(`[${this.name}] Import complete. Fetched ${allTenders.length} notices.`);
-    return allTenders;
+    return {
+      tenders: allTenders,
+      nextSince: fetchStartedAt,
+      complete: stopReason === null,
+      stopReason,
+    };
   },
 };
