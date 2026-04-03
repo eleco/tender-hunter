@@ -2,6 +2,7 @@ import { TenderSource, TenderSourceFetchOptions, TenderSourceFetchResult } from 
 import { searchFindTenderNotices, fetchFindTenderNextPage, FindTenderResponse } from "./client";
 import { normalizeFindTenderRelease } from "./normalize";
 import { Tender } from "@/lib/types";
+import { isOnOrAfter, maxTimestamp } from "@/lib/time-window";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 5;
@@ -13,7 +14,8 @@ export const FindATenderSource: TenderSource = {
   async fetchActiveTenders(options: TenderSourceFetchOptions = {}): Promise<TenderSourceFetchResult> {
     const allTenders: Tender[] = [];
     const fetchStartedAt = new Date().toISOString();
-    const updatedFrom = options.since ?? new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const updatedFrom = maxTimestamp(options.since, options.windowStart)
+      ?? new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     let page = 1;
     let nextLink: string | undefined;
     let stopReason: string | null = null;
@@ -40,8 +42,11 @@ export const FindATenderSource: TenderSource = {
         const tenders = releases
           .map(normalizeFindTenderRelease)
           .filter((t): t is Tender => t !== null);
+        const freshTenders = options.windowStart
+          ? tenders.filter((tender) => isOnOrAfter(tender.publishedAt, options.windowStart))
+          : tenders;
 
-        allTenders.push(...tenders);
+        allTenders.push(...freshTenders);
 
         if (!response.nextLink) break;
         nextLink = response.nextLink;

@@ -6,6 +6,7 @@ import { BoampSource } from "@/lib/sources/boamp";
 import { FindATenderSource } from "@/lib/sources/findatender";
 import { ImportRunTimings, SourceCheckpointMap } from "@/lib/store-types";
 import { createRunBudget } from "@/lib/runtime-budget";
+import { maxTimestamp } from "@/lib/time-window";
 
 const SOURCE_CHECKPOINT_OVERLAP_MS = 36 * 60 * 60 * 1000;
 const IMPORT_RUNTIME_BUDGET_MS = Number(process.env.IMPORT_RUNTIME_BUDGET_MS || 225000);
@@ -40,6 +41,7 @@ export type ImportJobResult = {
 
 type ImportJobOptions = {
   sourceCheckpoints?: SourceCheckpointMap;
+  windowStart?: string | null;
 };
 
 function withCheckpointOverlap(checkpoint?: string) {
@@ -80,10 +82,17 @@ export async function runImportJob(
 
     logger.log(`=== Fetching from: ${source.name} ===`);
     const sourceStartedAt = Date.now();
-    const sourceSince = withCheckpointOverlap(previousCheckpoints[source.id]);
+    const sourceSince = maxTimestamp(
+      withCheckpointOverlap(previousCheckpoints[source.id]),
+      options.windowStart,
+    );
 
     try {
-      const result = await source.fetchActiveTenders({ since: sourceSince, budget });
+      const result = await source.fetchActiveTenders({
+        since: sourceSince,
+        windowStart: options.windowStart,
+        budget,
+      });
       const durationMs = Date.now() - sourceStartedAt;
       logger.log(`-> ${source.name} returned ${result.tenders.length} tenders.\n`);
 

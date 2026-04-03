@@ -3,6 +3,7 @@ import { searchTedNotices } from "./client";
 import { normalizeTedNotice } from "./normalize";
 import { config } from "@/lib/config";
 import { Tender } from "@/lib/types";
+import { isOnOrAfter, maxTimestamp, startOfUtcDay } from "@/lib/time-window";
 
 const MAX_PAGES_TO_FETCH = 10;
 
@@ -11,16 +12,12 @@ export const TedSource: TenderSource = {
     name: "Tender Electronic Daily (TED)",
 
     async fetchActiveTenders(options: TenderSourceFetchOptions = {}): Promise<TenderSourceFetchResult> {
+        const cutoff = options.windowStart ?? (options.since ? startOfUtcDay(options.since) : null);
         let allTenders: Tender[] = [];
         let page = 1;
         let hasMore = true;
         let stopReason: string | null = null;
-        const cutoffDate = options.since ? new Date(options.since) : null;
-        if (cutoffDate) {
-            cutoffDate.setUTCHours(0, 0, 0, 0);
-        }
-        const cutoffMs = cutoffDate?.getTime() ?? null;
-        let newestPublishedAt: string | null = options.since ?? null;
+        let newestPublishedAt: string | null = maxTimestamp(options.since, options.windowStart);
 
         console.log(`[${this.name}] Starting import (max ${MAX_PAGES_TO_FETCH} pages)...`);
 
@@ -42,9 +39,9 @@ export const TedSource: TenderSource = {
                 const tenders = notices
                     .map(normalizeTedNotice)
                     .filter((t): t is NonNullable<typeof t> => t !== null);
-                const freshTenders = cutoffMs === null
+                const freshTenders = cutoff === null
                     ? tenders
-                    : tenders.filter((tender) => new Date(tender.publishedAt).getTime() >= cutoffMs);
+                    : tenders.filter((tender) => isOnOrAfter(tender.publishedAt, cutoff));
 
                 allTenders.push(...freshTenders);
 
@@ -59,7 +56,7 @@ export const TedSource: TenderSource = {
                 const computedTotalPages = Math.ceil(totalCount / limit);
                 hasMore = page < computedTotalPages;
 
-                if (cutoffMs !== null && freshTenders.length === 0) {
+                if (cutoff !== null && freshTenders.length === 0) {
                     break;
                 }
 

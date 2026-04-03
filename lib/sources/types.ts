@@ -3,6 +3,7 @@ import { RunBudget } from "@/lib/runtime-budget";
 
 export type TenderSourceFetchOptions = {
     since?: string | null;
+    windowStart?: string | null;
     budget?: RunBudget;
 };
 

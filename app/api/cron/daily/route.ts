@@ -28,6 +28,7 @@ async function handleCron(request: NextRequest) {
     }
 
     const startedAt = new Date().toISOString();
+    const windowStart = new Date(new Date(startedAt).getTime() - 24 * 60 * 60 * 1000).toISOString();
     const runId = crypto.randomUUID();
     const previousRun = await readCronRun();
     const sourceCheckpoints = previousRun?.sourceCheckpoints ?? {};
@@ -67,9 +68,10 @@ async function handleCron(request: NextRequest) {
         console.log("Daily cron job started:", {
           runId,
           startedAt,
+          windowStart,
         });
 
-        const importResult = await runImportJob(console, { sourceCheckpoints });
+        const importResult = await runImportJob(console, { sourceCheckpoints, windowStart });
         const digestResult = await runDigestJob(console);
 
         const finishedAt = new Date().toISOString();
