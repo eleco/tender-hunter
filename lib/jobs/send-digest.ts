@@ -1,6 +1,7 @@
 import { getDashboardData } from "@/lib/repository";
 import { config } from "@/lib/config";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getOpportunityCategory, getOpportunityCategoryLabel } from "@/lib/opportunity-category";
 import { Tender } from "@/lib/types";
 import { JobLogger } from "@/lib/jobs/import-tenders";
 
@@ -65,6 +66,7 @@ function buildImportedTenderDigest(
 
   const textSections = recentTenders.flatMap((tender, index) => [
     `${index + 1}. ${tender.title}`,
+    `Category: ${getOpportunityCategoryLabel(getOpportunityCategory(tender))}`,
     `Source: ${tender.source}`,
     `Buyer: ${tender.buyerName}`,
     `Country: ${tender.country}`,
@@ -87,6 +89,7 @@ function buildImportedTenderDigest(
     : `<ol>${recentTenders.map((tender) => `
         <li style="margin-bottom: 18px;">
           <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">${escapeHtml(tender.title)}</div>
+          <div><strong>Category:</strong> ${escapeHtml(getOpportunityCategoryLabel(getOpportunityCategory(tender)))}</div>
           <div><strong>Source:</strong> ${escapeHtml(tender.source)}</div>
           <div><strong>Buyer:</strong> ${escapeHtml(tender.buyerName)}</div>
           <div><strong>Country:</strong> ${escapeHtml(tender.country)}</div>
@@ -147,6 +150,7 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
 
   const textSections = topMatches.flatMap((match, index) => [
     `${index + 1}. ${match.title}`,
+    `Category: ${getOpportunityCategoryLabel(getOpportunityCategory(match))}`,
     `Buyer: ${match.buyerName}`,
     `Country: ${match.country}`,
     `Score: ${match.score}`,
@@ -168,6 +172,7 @@ function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
     : `<ol>${topMatches.map((match) => `
         <li style="margin-bottom: 18px;">
           <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">${escapeHtml(match.title)}</div>
+          <div><strong>Category:</strong> ${escapeHtml(getOpportunityCategoryLabel(getOpportunityCategory(match)))}</div>
           <div><strong>Buyer:</strong> ${escapeHtml(match.buyerName)}</div>
           <div><strong>Country:</strong> ${escapeHtml(match.country)}</div>
           <div><strong>Score:</strong> ${match.score}</div>
@@ -276,7 +281,7 @@ export async function runDigestJob(
   options: DigestJobOptions = {},
 ): Promise<DigestJobResult> {
   const windowStart = options.windowStart ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const data = await getDashboardData(1, undefined, undefined, undefined, "active", undefined, undefined, {
+  const data = await getDashboardData(1, undefined, undefined, undefined, undefined, "active", undefined, undefined, {
     publishedSince: windowStart,
   });
   const digest = buildDigest(data);

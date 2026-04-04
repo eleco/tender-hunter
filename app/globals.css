@@ -506,6 +506,28 @@ select {
   border-color: var(--border-strong);
 }
 
+.category-tag {
+  color: var(--ink);
+}
+
+.category-tender {
+  background: var(--blue-soft);
+  border-color: rgba(55, 103, 177, 0.2);
+  color: var(--blue);
+}
+
+.category-open-call {
+  background: var(--amber-soft);
+  border-color: rgba(188, 122, 24, 0.2);
+  color: var(--amber-text);
+}
+
+.category-grant {
+  background: var(--green-soft);
+  border-color: rgba(31, 138, 91, 0.2);
+  color: var(--green-text);
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -736,12 +758,57 @@ select {
   color: var(--ink-soft);
   font-size: 0.86rem;
   font-weight: 600;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 .country-chip.is-active,
 .country-chip:hover {
   border-color: rgba(55, 103, 177, 0.3);
   color: var(--ink);
+}
+
+.country-chip.is-active {
+  background: linear-gradient(135deg, rgba(55, 103, 177, 0.14), rgba(214, 95, 49, 0.12));
+  border-color: rgba(55, 103, 177, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(55, 103, 177, 0.08);
+  color: var(--ink);
+}
+
+.country-chip-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(55, 103, 177, 0.14);
+  color: rgb(40, 79, 141);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.country-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(72, 54, 38, 0.08);
+  color: var(--ink-faint);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.country-chip-count.is-active {
+  background: rgba(55, 103, 177, 0.12);
+  color: rgb(40, 79, 141);
 }
 
 .keyword-link {

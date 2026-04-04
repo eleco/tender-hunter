@@ -1,5 +1,6 @@
 import { readTenders, readSearches, readAiScores, upsertSearch, deleteSearch as storeDeleteSearch, setSearchEnabled as storeSetSearchEnabled, AiScoreCache, getPipelineEntry, getPipelineCounts, readPipeline, readCronRun } from "@/lib/store";
 import { buildPipelineFeedbackMap } from "@/lib/pipeline-learning";
+import { countByOpportunityCategory, getOpportunityCategory } from "@/lib/opportunity-category";
 import { findKeywordMatch } from "@/lib/keywords";
 import { scoreTender, scoreTenderForSME } from "@/lib/scoring";
 import { SavedSearch, SearchMatch, Tender, TenderLifecycleStatus } from "@/lib/types";
@@ -94,6 +95,7 @@ function buildMatches(
             estimatedValue: tender.estimatedValue,
             publishedAt: tender.publishedAt,
             deadlineAt: tender.deadlineAt,
+            opportunityCategory: getOpportunityCategory(tender),
             score: result.score,
             baseScore: result.baseScore,
             matchReasons: result.reasons,
@@ -306,8 +308,9 @@ function getCountryList(tenders: Tender[]): { country: string; count: number }[]
 export async function getDashboardData(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
-  country?: string,
+  countries: string[] = [],
   keyword?: string,
+  buyer?: string,
   view: TenderView = "active",
   sort?: string,
   dir?: string,
@@ -325,8 +328,8 @@ export async function getDashboardData(
   const recurringFamilies = getRecurringTenderSignals(allTenders);
   const lastRun = await readCronRun();
 
-  let tenders = country
-    ? tendersForView.filter((t) => t.country === country)
+  let tenders = countries.length > 0
+    ? tendersForView.filter((t) => countries.includes(t.country))
     : tendersForView;
 
   if (keyword) {
@@ -337,17 +340,22 @@ export async function getDashboardData(
     );
   }
 
+  if (buyer) {
+    tenders = tenders.filter((tender) => tender.buyerName === buyer);
+  }
+
   if (options.publishedSince) {
     tenders = tenders.filter((tender) => isOnOrAfter(tender.publishedAt, options.publishedSince));
   }
 
   const allMatches = buildMatches(enabledSearches, tenders, aiCache, feedbackByTender);
   const bySource = countBySource(tenders);
+  const byCategory = countByOpportunityCategory(tenders);
   const topKeywords = getTopKeywords(tenders);
   const smeScores = getSmeScoreMap(tenders);
 
   // When browsing by country or keyword, show paginated all-tenders list
-  if (enabledSearches.length === 0 || country || keyword) {
+  if (enabledSearches.length === 0 || countries.length > 0 || keyword || buyer) {
     const defaultSort = enabledSearches.length === 0 ? "sme" : "published";
     const sorted = sortTenders(tenders, sort || defaultSort, dir || "desc", smeScores);
     const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
@@ -362,6 +370,7 @@ export async function getDashboardData(
         archivedTenders: lifecycleCounts.archived,
         strongMatches: allMatches.filter((m) => m.score >= 70).length,
         bySource,
+        byCategory,
         pipeline: pipelineCounts,
         lastRun,
       },
@@ -390,6 +399,7 @@ export async function getDashboardData(
       archivedTenders: lifecycleCounts.archived,
       strongMatches: allMatches.filter((match) => match.score >= 70).length,
       bySource,
+      byCategory,
       pipeline: pipelineCounts,
       lastRun,
     },

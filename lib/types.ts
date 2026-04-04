@@ -1,5 +1,6 @@
 export type PipelineStatus = "watching" | "drafting" | "submitted" | "won" | "lost" | "passed";
 export type TenderLifecycleStatus = "active" | "archived";
+export type OpportunityCategory = "tender" | "open-call" | "grant";
 
 export type PipelineEntry = {
   tenderId: string;
@@ -43,6 +44,7 @@ export type Tender = {
   deadlineAt: string | null;
   status: string;
   procedureType?: string;
+  opportunityCategory?: OpportunityCategory;
   cpvCodes: string[];
   lifecycleStatus: TenderLifecycleStatus;
   archivedAt: string | null;
@@ -69,6 +71,7 @@ export type SearchMatch = {
   estimatedValue: number | null;
   publishedAt: string;
   deadlineAt: string | null;
+  opportunityCategory?: OpportunityCategory;
   score: number;
   baseScore?: number;
   matchReasons: string[];

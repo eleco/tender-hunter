@@ -9,6 +9,7 @@ import {
   getScoreClass,
 } from "@/lib/format";
 import { extractTenderScopes } from "@/lib/lots";
+import { getOpportunityCategory, getOpportunityCategoryLabel } from "@/lib/opportunity-category";
 import { scoreTenderForSME } from "@/lib/scoring";
 import { removePipelineEntry, updatePipelineStatus } from "./actions";
 import type { PipelineStatus } from "@/lib/types";
@@ -46,6 +47,7 @@ export default async function TenderDetailPage({ params }: Props) {
   const pipeline = tender.pipeline;
   const currentStatus = pipeline?.status;
   const urgency = deadlineUrgency(tender.deadlineAt);
+  const opportunityCategory = getOpportunityCategory(tender);
   const smeFit = scoreTenderForSME(tender);
   const rankedLots = extractTenderScopes(tender)
     .filter((scope) => scope.kind === "lot")
@@ -71,6 +73,9 @@ export default async function TenderDetailPage({ params }: Props) {
               <span className="tag">
                 {tender.lifecycleStatus === "archived" ? "Archived" : "Live"}
               </span>
+              <span className={`tag category-tag category-${opportunityCategory}`}>
+                {getOpportunityCategoryLabel(opportunityCategory)}
+              </span>
               {tender.procedureType && <span className="tag">{tender.procedureType}</span>}
               {currentStatus && (
                 <span
@@ -89,7 +94,9 @@ export default async function TenderDetailPage({ params }: Props) {
               <div className="section-label">Tender</div>
               <h1 className="title-lg">{tender.title}</h1>
               <p className="lede" style={{ margin: 0 }}>
-                {tender.buyerName}
+                <Link href={`/dashboard?buyer=${encodeURIComponent(tender.buyerName)}`}>
+                  {tender.buyerName}
+                </Link>
               </p>
             </div>
 
@@ -336,8 +343,11 @@ export default async function TenderDetailPage({ params }: Props) {
             </div>
 
             <ul className="list-plain">
-              <li>Buyer: {tender.buyerName}</li>
+              <li>
+                Buyer: <Link href={`/dashboard?buyer=${encodeURIComponent(tender.buyerName)}`}>{tender.buyerName}</Link>
+              </li>
               <li>Country: {tender.country || "Not specified"}</li>
+              <li>Category: {getOpportunityCategoryLabel(opportunityCategory)}</li>
               <li>Procedure: {tender.procedureType || "Not specified"}</li>
               <li>Published: {formatDate(tender.publishedAt)}</li>
               <li>Lifecycle: {tender.lifecycleStatus === "archived" ? "Archived" : "Live"}</li>

@@ -4,6 +4,7 @@ import { TenderSource } from "@/lib/sources/types";
 import { TedSource } from "@/lib/sources/ted";
 import { BoampSource } from "@/lib/sources/boamp";
 import { FindATenderSource } from "@/lib/sources/findatender";
+import { EccpFundingSource } from "@/lib/sources/eccp-funding";
 import { ImportRunTimings, SourceCheckpointMap } from "@/lib/store-types";
 import { createRunBudget } from "@/lib/runtime-budget";
 import { maxTimestamp } from "@/lib/time-window";
@@ -55,6 +56,7 @@ const SOURCES: TenderSource[] = [
   TedSource,         // EU-wide above-threshold  (TED Search API v3, free, no auth)
   BoampSource,       // France all-threshold     (BOAMP Socrata API, free, no auth)
   FindATenderSource, // UK above-threshold       (Find a Tender OCDS API, free, no auth)
+  EccpFundingSource, // ECCP open calls/funding  (public sitemap + public content pages)
 ];
 
 export async function runImportJob(

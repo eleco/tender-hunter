@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import { getDashboardData } from "@/lib/repository";
 import { toggleSearchEnabled } from "@/app/searches/new/actions";
 import {
@@ -8,11 +9,13 @@ import {
   formatDate,
   getScoreClass,
 } from "@/lib/format";
+import { getOpportunityCategory, getOpportunityCategoryLabel } from "@/lib/opportunity-category";
 
 type SearchParams = Promise<{
   page?: string;
-  country?: string;
+  country?: string | string[];
   keyword?: string;
+  buyer?: string;
   view?: "active" | "archived" | "all";
   sort?: string;
   dir?: string;
@@ -49,57 +52,46 @@ function DeadlineCell({ deadlineAt }: { deadlineAt: string | null }) {
 }
 
 export default async function DashboardPage({ searchParams }: Props) {
-  const { page: pageParam, country, keyword, view, sort, dir } = await searchParams;
+  const { page: pageParam, country, keyword, buyer, view, sort, dir } = await searchParams;
   const page = Number(pageParam || "1") || 1;
-  const data = await getDashboardData(page, 25, country, keyword, view ?? "active", sort, dir);
+  const selectedCountries = Array.from(new Set(
+    (Array.isArray(country) ? country : country ? country.split(",") : [])
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ));
+  const selectedCountrySet = new Set(selectedCountries);
+  const selectedBuyer = buyer?.trim() || undefined;
+  const data = await getDashboardData(page, 25, selectedCountries, keyword, selectedBuyer, view ?? "active", sort, dir);
 
-  function buildUrl(params: {
-    country?: string;
+  function buildDashboardHref(params: {
+    countries?: string[];
     keyword?: string;
+    buyer?: string;
     view?: "active" | "archived" | "all";
     page?: number;
     sort?: string;
     dir?: string;
-  }) {
-    const parts: string[] = [];
-    if (params.country) parts.push(`country=${encodeURIComponent(params.country)}`);
-    if (params.keyword) parts.push(`keyword=${encodeURIComponent(params.keyword)}`);
-    if (params.view && params.view !== "active") parts.push(`view=${params.view}`);
-    if (params.sort) parts.push(`sort=${params.sort}`);
-    if (params.dir) parts.push(`dir=${params.dir}`);
-    if (params.page && params.page > 1) parts.push(`page=${params.page}`);
-    return parts.length ? `/dashboard?${parts.join("&")}` : "/dashboard";
-  }
+  }, includeResultsAnchor: boolean = false) {
+    const query = new URLSearchParams();
+    for (const value of params.countries ?? []) {
+      query.append("country", value);
+    }
+    if (params.keyword) query.set("keyword", params.keyword);
+    if (params.buyer) query.set("buyer", params.buyer);
+    if (params.view && params.view !== "active") query.set("view", params.view);
+    if (params.sort) query.set("sort", params.sort);
+    if (params.dir) query.set("dir", params.dir);
+    if (params.page && params.page > 1) query.set("page", String(params.page));
 
-  function buildDashboardHref(
-    params: {
-      country?: string;
-      keyword?: string;
-      view?: "active" | "archived" | "all";
-      page?: number;
-      sort?: string;
-      dir?: string;
-    },
-    includeResultsAnchor: boolean = false,
-  ) {
-    const query: Record<string, string> = {};
-    if (params.country) query.country = params.country;
-    if (params.keyword) query.keyword = params.keyword;
-    if (params.view && params.view !== "active") query.view = params.view;
-    if (params.sort) query.sort = params.sort;
-    if (params.dir) query.dir = params.dir;
-    if (params.page && params.page > 1) query.page = String(params.page);
-
-    return {
-      pathname: "/dashboard",
-      query,
-      hash: includeResultsAnchor ? RESULTS_SECTION_ID : undefined,
-    } as const;
+    const queryString = query.toString();
+    const hash = includeResultsAnchor ? `#${RESULTS_SECTION_ID}` : "";
+    return (queryString ? `/dashboard?${queryString}${hash}` : `/dashboard${hash}`) as Route;
   }
 
   function resultsHref(params: {
-    country?: string;
+    countries?: string[];
     keyword?: string;
+    buyer?: string;
     view?: "active" | "archived" | "all";
     page?: number;
     sort?: string;
@@ -111,7 +103,7 @@ export default async function DashboardPage({ searchParams }: Props) {
   function sortHref(field: string) {
     const isActive = data.sort === field;
     const nextDir = isActive && data.dir === "desc" ? "asc" : "desc";
-    return resultsHref({ country, keyword, view: data.view, sort: field, dir: nextDir });
+    return resultsHref({ countries: selectedCountries, keyword, buyer: selectedBuyer, view: data.view, sort: field, dir: nextDir });
   }
 
   function sortIndicator(field: string) {
@@ -123,7 +115,7 @@ export default async function DashboardPage({ searchParams }: Props) {
   const activePursuits =
     (pipeline.watching ?? 0) + (pipeline.drafting ?? 0) + (pipeline.submitted ?? 0);
   const showingAllTenders =
-    data.view !== "active" || data.activeSearchCount === 0 || Boolean(country) || Boolean(keyword);
+    data.view !== "active" || data.activeSearchCount === 0 || selectedCountries.length > 0 || Boolean(keyword) || Boolean(selectedBuyer);
   return (
     <main className="page-shell">
       <section className="panel-grid">
@@ -233,7 +225,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           ].map(({ key, label }) => (
             <Link
               key={key}
-              href={resultsHref({ country, keyword, view: key as "active" | "archived" | "all" })}
+              href={resultsHref({ countries: selectedCountries, keyword, buyer: selectedBuyer, view: key as "active" | "archived" | "all" })}
               scroll={false}
               className={`country-chip${data.view === key ? " is-active" : ""}`}
             >
@@ -243,7 +235,32 @@ export default async function DashboardPage({ searchParams }: Props) {
         </div>
       </section>
 
-      <section className="grid grid-2">
+      <section className="grid grid-3">
+        <div className="card section-stack">
+          <div>
+            <h2 className="title-md">Opportunity mix</h2>
+            <p className="muted" style={{ margin: "6px 0 0" }}>
+              Current results split by tender, open call, and grant.
+            </p>
+          </div>
+
+          <div className="stack">
+            {Object.entries(data.snapshot.byCategory)
+              .filter(([, count]) => count > 0)
+              .sort((a, b) => b[1] - a[1])
+              .map(([category, count]) => (
+                <div key={category} className="row-between">
+                  <span className={`tag category-tag category-${category}`}>
+                    {getOpportunityCategoryLabel(category as "tender" | "open-call" | "grant")}
+                  </span>
+                  <span className="mono" style={{ color: "var(--ink-soft)", fontSize: "0.82rem" }}>
+                    {count}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+
         <div className="card section-stack">
           <div className="row-between">
             <div>
@@ -313,8 +330,8 @@ export default async function DashboardPage({ searchParams }: Props) {
                 const isActive = word === keyword;
                 const href = resultsHref(
                   isActive
-                    ? { country, view: data.view }
-                    : { country, keyword: word, view: data.view },
+                    ? { countries: selectedCountries, buyer: selectedBuyer, view: data.view }
+                    : { countries: selectedCountries, keyword: word, buyer: selectedBuyer, view: data.view },
                 );
                 const scale = Math.min(1.28, 0.88 + count / Math.max(data.topKeywords[0].count, 1));
 
@@ -343,32 +360,61 @@ export default async function DashboardPage({ searchParams }: Props) {
             <h2 className="title-md">Country filter</h2>
           </div>
 
+          {selectedCountries.length > 0 && (
+            <div className="card-inset section-stack" style={{ gap: 8 }}>
+              <div className="row-between" style={{ alignItems: "center" }}>
+                <strong style={{ fontSize: "0.95rem" }}>
+                  {selectedCountries.length === 1 ? "1 country selected" : `${selectedCountries.length} countries selected`}
+                </strong>
+                <Link
+                  href={resultsHref({ keyword, buyer: selectedBuyer, view: data.view })}
+                  scroll={false}
+                  className="nav-link"
+                  style={{ padding: 0 }}
+                >
+                  Clear all
+                </Link>
+              </div>
+              <div className="filter-cluster">
+                {selectedCountries.map((value) => (
+                  <span key={value} className="country-chip is-active">
+                    <span className="country-chip-check">✓</span>
+                    <span>{countryFlag(value)}</span>
+                    <span>{value}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="country-list">
             <Link
-              href={resultsHref({ keyword, view: data.view })}
+              href={resultsHref({ keyword, buyer: selectedBuyer, view: data.view })}
               scroll={false}
-              className={`country-chip${!country ? " is-active" : ""}`}
+              className={`country-chip${selectedCountries.length === 0 ? " is-active" : ""}`}
             >
               All countries
             </Link>
 
             {data.allCountries.slice(0, 20).map(({ country: value, count }) => {
-              const isActive = value === country;
+              const isActive = selectedCountrySet.has(value);
+              const nextCountries = isActive
+                ? selectedCountries.filter((countryValue) => countryValue !== value)
+                : [...selectedCountries, value];
 
               return (
                 <Link
                   key={value}
                   href={resultsHref(
-                    isActive
-                      ? { keyword, view: data.view }
-                      : { country: value, keyword, view: data.view },
+                    { countries: nextCountries, keyword, buyer: selectedBuyer, view: data.view },
                   )}
                   scroll={false}
                   className={`country-chip${isActive ? " is-active" : ""}`}
                 >
+                  {isActive && <span className="country-chip-check">✓</span>}
                   <span>{countryFlag(value)}</span>
                   <span>{value}</span>
-                  <span className="mono" style={{ fontSize: "0.75rem" }}>
+                  <span className={`country-chip-count${isActive ? " is-active" : ""}`}>
                     {count}
                   </span>
                 </Link>
@@ -457,8 +503,12 @@ export default async function DashboardPage({ searchParams }: Props) {
           <div className="toolbar">
             <div>
               <h2 className="title-md">
-                {country
-                  ? `${country} tenders`
+                {selectedBuyer
+                  ? `${selectedBuyer} tenders`
+                  : selectedCountries.length > 0
+                  ? selectedCountries.length === 1
+                    ? `${selectedCountries[0]} tenders`
+                    : `${selectedCountries.length} countries selected`
                   : data.view === "archived"
                     ? "Archived tenders"
                     : data.view === "all"
@@ -468,6 +518,8 @@ export default async function DashboardPage({ searchParams }: Props) {
               <p className="muted" style={{ margin: "6px 0 0" }}>
                 {keyword
                   ? `Filtered by keyword "${keyword}".`
+                  : selectedBuyer
+                    ? `Showing all tenders from ${selectedBuyer}.`
                   : data.view === "archived"
                     ? "Historical notices kept for archive analytics and buyer memory."
                     : data.view === "all"
@@ -485,10 +537,11 @@ export default async function DashboardPage({ searchParams }: Props) {
             )}
           </div>
 
-          {keyword && (
+          {(keyword || selectedBuyer) && (
             <div className="filter-cluster">
-              <span className="tag">{keyword}</span>
-              <Link href={resultsHref({ country, view: data.view })} scroll={false} className="nav-link" style={{ padding: 0 }}>
+              {keyword && <span className="tag">{keyword}</span>}
+              {selectedBuyer && <span className="tag">{selectedBuyer}</span>}
+              <Link href={resultsHref({ countries: selectedCountries, view: data.view })} scroll={false} className="nav-link" style={{ padding: 0 }}>
                 Clear filter
               </Link>
             </div>
@@ -529,6 +582,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                 <tbody>
                   {data.allTenders?.map((tender) => {
                     const smeFit = data.smeScores[tender.id] ?? 0;
+                    const opportunityCategory = getOpportunityCategory(tender);
 
                     return (
                       <tr key={tender.id}>
@@ -538,6 +592,9 @@ export default async function DashboardPage({ searchParams }: Props) {
                               <strong>{tender.title}</strong>
                             </Link>
                             <div className="filter-cluster">
+                              <span className={`tag category-tag category-${opportunityCategory}`}>
+                                {getOpportunityCategoryLabel(opportunityCategory)}
+                              </span>
                               <span className="tag">{tender.source.toUpperCase()}</span>
                               <span className="tag">
                                 {tender.lifecycleStatus === "archived" ? "Archived" : "Live"}
@@ -545,7 +602,14 @@ export default async function DashboardPage({ searchParams }: Props) {
                             </div>
                           </div>
                         </td>
-                        <td className="muted">{tender.buyerName}</td>
+                        <td className="muted">
+                          <Link
+                            href={resultsHref({ countries: selectedCountries, keyword, buyer: tender.buyerName, view: data.view })}
+                            scroll={false}
+                          >
+                            {tender.buyerName}
+                          </Link>
+                        </td>
                         <td className="muted">
                           {countryFlag(tender.country ?? "")} {tender.country}
                         </td>
@@ -572,8 +636,9 @@ export default async function DashboardPage({ searchParams }: Props) {
               <div className="action-row">
                 <Link
                   href={buildDashboardHref({
-                    country,
+                    countries: selectedCountries,
                     keyword,
+                    buyer: selectedBuyer,
                     view: data.view,
                     sort: data.sort,
                     dir: data.dir,
@@ -587,8 +652,9 @@ export default async function DashboardPage({ searchParams }: Props) {
                 </Link>
                 <Link
                   href={buildDashboardHref({
-                    country,
+                    countries: selectedCountries,
                     keyword,
+                    buyer: selectedBuyer,
                     view: data.view,
                     sort: data.sort,
                     dir: data.dir,
@@ -654,7 +720,10 @@ export default async function DashboardPage({ searchParams }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.matches.map((match) => (
+                  {data.matches.map((match) => {
+                    const opportunityCategory = getOpportunityCategory(match);
+
+                    return (
                     <tr key={`${match.searchId}-${match.tenderId}-${match.matchedScope?.id ?? "notice"}`}>
                       <td>
                         <div className="stack-sm">
@@ -662,6 +731,9 @@ export default async function DashboardPage({ searchParams }: Props) {
                             <strong>{match.title}</strong>
                           </Link>
                           <div className="filter-cluster">
+                            <span className={`tag category-tag category-${opportunityCategory}`}>
+                              {getOpportunityCategoryLabel(opportunityCategory)}
+                            </span>
                             <span className="tag">{match.source.toUpperCase()}</span>
                             {match.matchedScope?.kind === "lot" && (
                               <span className="tag">{match.matchedScope.title}</span>
@@ -674,7 +746,14 @@ export default async function DashboardPage({ searchParams }: Props) {
                           </div>
                         </div>
                       </td>
-                      <td className="muted">{match.buyerName}</td>
+                      <td className="muted">
+                        <Link
+                          href={resultsHref({ countries: selectedCountries, keyword, buyer: match.buyerName, view: data.view })}
+                          scroll={false}
+                        >
+                          {match.buyerName}
+                        </Link>
+                      </td>
                       <td className="muted">
                         {countryFlag(match.country ?? "")} {match.country}
                       </td>
@@ -698,7 +777,7 @@ export default async function DashboardPage({ searchParams }: Props) {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
