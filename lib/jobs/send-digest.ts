@@ -12,6 +12,14 @@ export type DigestJobResult = {
   subject: string;
 };
 
+type DigestJobOptions = {
+  windowStart?: string | null;
+};
+
+function sortByPublishedAtDesc<T extends { publishedAt: string }>(items: T[]) {
+  return [...items].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+}
+
 function formatDigestDate() {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "full",
@@ -42,7 +50,7 @@ function buildImportedTenderDigest(
   tenders: Tender[],
 ) {
   const generatedAt = formatDigestDate();
-  const recentTenders = tenders.slice(0, 10);
+  const recentTenders = sortByPublishedAtDesc(tenders).slice(0, 10);
   const subject = `Tender Hunter daily scanner results: ${recentTenders.length} recent tenders`;
   const summaryLines = [
     "Tender Hunter daily digest",
@@ -123,7 +131,7 @@ function buildImportedTenderDigest(
 
 function buildMatchDigest(data: Awaited<ReturnType<typeof getDashboardData>>) {
   const generatedAt = formatDigestDate();
-  const topMatches = data.matches.slice(0, 10);
+  const topMatches = sortByPublishedAtDesc(data.matches).slice(0, 10);
   const subject = `Tender Hunter daily scanner results: ${topMatches.length} top matches`;
   const summaryLines = [
     "Tender Hunter daily digest",
@@ -265,8 +273,12 @@ async function sendViaMailgun(subject: string, text: string, html: string, logge
 
 export async function runDigestJob(
   logger: JobLogger = console,
+  options: DigestJobOptions = {},
 ): Promise<DigestJobResult> {
-  const data = await getDashboardData();
+  const windowStart = options.windowStart ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const data = await getDashboardData(1, undefined, undefined, undefined, "active", undefined, undefined, {
+    publishedSince: windowStart,
+  });
   const digest = buildDigest(data);
 
   logger.log(digest.text);

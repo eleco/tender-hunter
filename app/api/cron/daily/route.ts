@@ -72,7 +72,7 @@ async function handleCron(request: NextRequest) {
         });
 
         const importResult = await runImportJob(console, { sourceCheckpoints, windowStart });
-        const digestResult = await runDigestJob(console);
+        const digestResult = await runDigestJob(console, { windowStart });
 
         const finishedAt = new Date().toISOString();
         const durationMs = Date.now() - backgroundStartedAt;

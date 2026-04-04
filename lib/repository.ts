@@ -3,9 +3,13 @@ import { buildPipelineFeedbackMap } from "@/lib/pipeline-learning";
 import { findKeywordMatch } from "@/lib/keywords";
 import { scoreTender, scoreTenderForSME } from "@/lib/scoring";
 import { SavedSearch, SearchMatch, Tender, TenderLifecycleStatus } from "@/lib/types";
+import { isOnOrAfter } from "@/lib/time-window";
 
 const DEFAULT_PAGE_SIZE = 25;
 export type TenderView = "active" | "archived" | "all";
+type GetDashboardDataOptions = {
+  publishedSince?: string | null;
+};
 
 function getSmeScoreMap(tenders: Tender[]) {
   return new Map(tenders.map((tender) => [tender.id, scoreTenderForSME(tender).score]));
@@ -307,6 +311,7 @@ export async function getDashboardData(
   view: TenderView = "active",
   sort?: string,
   dir?: string,
+  options: GetDashboardDataOptions = {},
 ) {
   const searches = await readSearches();
   const enabledSearches = getEnabledSearches(searches);
@@ -330,6 +335,10 @@ export async function getDashboardData(
         Boolean(findKeywordMatch(t.title, keyword)) ||
         Boolean(findKeywordMatch(t.description ?? "", keyword)),
     );
+  }
+
+  if (options.publishedSince) {
+    tenders = tenders.filter((tender) => isOnOrAfter(tender.publishedAt, options.publishedSince));
   }
 
   const allMatches = buildMatches(enabledSearches, tenders, aiCache, feedbackByTender);
