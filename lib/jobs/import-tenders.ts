@@ -8,9 +8,12 @@ import { EccpFundingSource } from "@/lib/sources/eccp-funding";
 import { ImportRunTimings, SourceCheckpointMap } from "@/lib/store-types";
 import { createRunBudget } from "@/lib/runtime-budget";
 import { maxTimestamp } from "@/lib/time-window";
+import { mapWithConcurrency } from "@/lib/async";
+import { Tender } from "@/lib/types";
 
 const SOURCE_CHECKPOINT_OVERLAP_MS = 36 * 60 * 60 * 1000;
 const IMPORT_RUNTIME_BUDGET_MS = Number(process.env.IMPORT_RUNTIME_BUDGET_MS || 225000);
+const IMPORT_SOURCE_CONCURRENCY = Math.max(1, Number(process.env.IMPORT_SOURCE_CONCURRENCY || 2));
 const MIN_MS_TO_START_SOURCE = 60000;
 const MIN_MS_TO_START_AI_SCORING = 30000;
 
@@ -45,6 +48,33 @@ type ImportJobOptions = {
   windowStart?: string | null;
 };
 
+type SourceFetchOutcome =
+  | {
+      source: TenderSource;
+      started: false;
+      budgetStop: true;
+    }
+  | {
+      source: TenderSource;
+      started: true;
+      tenders: Tender[];
+      nextSince: string | null;
+      complete: boolean;
+      stopReason?: string;
+      durationMs: number;
+      ok: true;
+    }
+  | {
+      source: TenderSource;
+      started: true;
+      tenders: [];
+      nextSince: null;
+      complete: true;
+      durationMs: number;
+      ok: false;
+      error: string;
+    };
+
 function withCheckpointOverlap(checkpoint?: string) {
   if (!checkpoint) return null;
   return new Date(new Date(checkpoint).getTime() - SOURCE_CHECKPOINT_OVERLAP_MS).toISOString();
@@ -66,7 +96,9 @@ export async function runImportJob(
   const startedAt = Date.now();
   const budget = createRunBudget(IMPORT_RUNTIME_BUDGET_MS);
   const previousCheckpoints = options.sourceCheckpoints ?? {};
-  logger.log(`Starting multi-source tender import for ${SOURCES.length} sources...\n`);
+  logger.log(
+    `Starting multi-source tender import for ${SOURCES.length} sources with concurrency ${Math.min(IMPORT_SOURCE_CONCURRENCY, SOURCES.length)}...\n`,
+  );
   const sources: ImportSourceSummary[] = [];
   const sourceCheckpoints: SourceCheckpointMap = { ...previousCheckpoints };
   let totalImported = 0;
@@ -74,70 +106,114 @@ export async function runImportJob(
   let completed = true;
   let stopReason: string | null = null;
 
-  for (const source of SOURCES) {
-    if (budget.shouldStop(MIN_MS_TO_START_SOURCE)) {
+  const fetchOutcomes = await mapWithConcurrency(
+    SOURCES,
+    IMPORT_SOURCE_CONCURRENCY,
+    async (source): Promise<SourceFetchOutcome> => {
+      if (budget.shouldStop(MIN_MS_TO_START_SOURCE)) {
+        return {
+          source,
+          started: false,
+          budgetStop: true,
+        };
+      }
+
+      logger.log(`=== Fetching from: ${source.name} ===`);
+      const sourceStartedAt = Date.now();
+      const sourceSince = maxTimestamp(
+        withCheckpointOverlap(previousCheckpoints[source.id]),
+        options.windowStart,
+      );
+
+      try {
+        const result = await source.fetchActiveTenders({
+          since: sourceSince,
+          windowStart: options.windowStart,
+          budget,
+        });
+        const durationMs = Date.now() - sourceStartedAt;
+        logger.log(`-> ${source.name} returned ${result.tenders.length} tenders.\n`);
+
+        return {
+          source,
+          started: true,
+          tenders: result.tenders,
+          nextSince: result.nextSince ?? null,
+          complete: result.complete !== false,
+          stopReason: result.stopReason ?? undefined,
+          durationMs,
+          ok: true,
+        };
+      } catch (error) {
+        const durationMs = Date.now() - sourceStartedAt;
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`-> [ERROR] Failed to fetch from ${source.name}:`, error);
+
+        return {
+          source,
+          started: true,
+          tenders: [],
+          nextSince: null,
+          complete: true,
+          durationMs,
+          ok: false,
+          error: message,
+        };
+      }
+    },
+  );
+
+  for (const outcome of fetchOutcomes) {
+    if (!outcome.started) {
       completed = false;
-      stopReason = "Stopped before starting the next source to stay within the runtime budget.";
-      logger.log(stopReason);
-      break;
+      if (!stopReason) {
+        stopReason = "Stopped before starting the next source to stay within the runtime budget.";
+        logger.log(stopReason);
+      }
+      continue;
     }
 
-    logger.log(`=== Fetching from: ${source.name} ===`);
-    const sourceStartedAt = Date.now();
-    const sourceSince = maxTimestamp(
-      withCheckpointOverlap(previousCheckpoints[source.id]),
-      options.windowStart,
-    );
-
-    try {
-      const result = await source.fetchActiveTenders({
-        since: sourceSince,
-        windowStart: options.windowStart,
-        budget,
-      });
-      const durationMs = Date.now() - sourceStartedAt;
-      logger.log(`-> ${source.name} returned ${result.tenders.length} tenders.\n`);
-
-      if (result.tenders.length > 0) {
-        logger.log(`Upserting ${result.tenders.length} ${source.name} tenders...`);
+    if (outcome.ok) {
+      if (outcome.tenders.length > 0) {
+        logger.log(`Upserting ${outcome.tenders.length} ${outcome.source.name} tenders...`);
         const dbWriteStartedAt = Date.now();
-        await upsertTenders(result.tenders);
+        await upsertTenders(outcome.tenders);
         dbWriteMs += Date.now() - dbWriteStartedAt;
-        totalImported += result.tenders.length;
+        totalImported += outcome.tenders.length;
       }
 
-      if (result.complete !== false && result.nextSince) {
-        sourceCheckpoints[source.id] = result.nextSince;
+      if (outcome.complete && outcome.nextSince) {
+        sourceCheckpoints[outcome.source.id] = outcome.nextSince;
       }
 
       sources.push({
-        id: source.id,
-        name: source.name,
-        count: result.tenders.length,
+        id: outcome.source.id,
+        name: outcome.source.name,
+        count: outcome.tenders.length,
         ok: true,
-        durationMs,
-        stoppedEarly: result.complete === false,
-        error: result.stopReason ?? undefined,
+        durationMs: outcome.durationMs,
+        stoppedEarly: !outcome.complete,
+        error: outcome.stopReason ?? undefined,
       });
 
-      if (result.complete === false) {
+      if (!outcome.complete && !stopReason) {
         completed = false;
-        stopReason = result.stopReason ?? `Stopped early while processing ${source.name}.`;
-        break;
+        stopReason = outcome.stopReason ?? `Stopped early while processing ${outcome.source.name}.`;
+      } else if (!outcome.complete) {
+        completed = false;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const durationMs = Date.now() - sourceStartedAt;
-      logger.error(`-> [ERROR] Failed to fetch from ${source.name}:`, error);
-      sources.push({
-        id: source.id,
-        name: source.name,
-        count: 0,
-        ok: false,
-        error: message,
-        durationMs,
-      });
+
+      continue;
     }
+
+    sources.push({
+      id: outcome.source.id,
+      name: outcome.source.name,
+      count: 0,
+      ok: false,
+      error: outcome.error,
+      durationMs: outcome.durationMs,
+    });
   }
 
   const fetchMs = Date.now() - startedAt - dbWriteMs;
